@@ -11,6 +11,7 @@
     "type-check": "vue-tsc --build --force"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "aws-amplify": "^6.6.6",
     "vue": "^3.4.21"
   },
