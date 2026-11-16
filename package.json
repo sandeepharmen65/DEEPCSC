@@ -11,8 +11,10 @@
     "type-check": "vue-tsc --build --force"
   },
   "dependencies": {
+    "@vercel/speed-insights": "^2.1.0",
     "aws-amplify": "^6.6.6",
-    "vue": "^3.4.21"
+    "vue": "^3.4.21",
+    "vue-router": "^4.6.5"
   },
   "devDependencies": {
     "@aws-amplify/backend": "^1.5.0",
