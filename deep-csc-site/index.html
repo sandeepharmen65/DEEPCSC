@@ -1,0 +1,82 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Deep CSC, Chhajli, Sunam: Punjab document services, Aadhaar and certificate help, forms, schemes, bookings and WhatsApp support.">
+  <meta name="theme-color" content="#0b3934">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.in; form-action 'self' https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.in">
+  <title>Deep CSC — Punjab Services in Chhajli, Sunam</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#home"><span class="brand-mark">D</span><span>DEEP CSC<small>CHHAJLI · SUNAM</small></span></a>
+    <button class="mobile-menu" id="mobile-menu" type="button" aria-expanded="false" aria-controls="main-nav">Menu <span>☰</span></button>
+    <nav id="main-nav" aria-label="Main navigation"><a href="#customer">Customer corner</a><a href="#documents">Documents</a><a href="#booking">Home service</a></nav>
+    <select id="language" aria-label="Choose language"><option value="en">English</option><option value="pa">ਪੰਜਾਬੀ</option><option value="hi">हिन्दी</option></select>
+    <button class="button button-quiet" id="account-open">Login / Register</button>
+    <a class="button button-dark" href="https://wa.me/919478727562" target="_blank" rel="noopener">WhatsApp <span>↗</span></a>
+  </header>
+
+  <aside class="offer-banner" id="active-offer" hidden aria-live="polite"></aside>
+
+  <main>
+    <section class="hero" id="home">
+      <div class="hero-copy">
+        <div class="eyebrow">DEEP CSC · CHHAJLI, SUNAM <i></i></div>
+        <h1>Punjab services,<br><em>with local support.</em></h1>
+        <p>From Aadhaar and certificates to pensions, job forms and bill help—choose a service, see its own checklist and message Deep CSC on WhatsApp. We confirm the current portal fee before submitting your application.</p>
+        <div class="hero-actions"><a class="button button-lime" href="#documents">Browse services <span>→</span></a><a class="button button-outline" href="https://wa.me/919478727562" target="_blank" rel="noopener"><span class="normal-label">Message Deep CSC</span><span class="hover-label">WhatsApp us →</span></a></div>
+        <div class="hero-points"><span>✓ Chhajli · Sunam</span><span>✓ Service-wise checklist</span><span>✓ Open 24 hours</span></div>
+      </div>
+      <div class="hero-art"><div class="art-halo"></div><img src="deep-csc-animated-header.svg" alt="Animated Deep CSC logo"></div>
+    </section>
+
+    <section class="section customer" id="customer">
+      <div class="section-head"><div><div class="eyebrow">DEEP CSC CUSTOMER HELP <i></i></div><h2>What do you need help with?</h2></div><p>Choose an option and message Deep CSC on WhatsApp: +91 94787 27562.</p></div>
+      <div class="corner-grid">
+        <button class="corner-card" data-action="apply"><span class="corner-icon">▧</span><b>Apply for a service</b><small>Select a document and see its checklist.</small><span class="corner-arrow">↗</span></button>
+        <button class="corner-card" data-action="track"><span class="corner-icon">⌛</span><b>Track application</b><small>Check a request or certificate status.</small><span class="corner-arrow">↗</span></button>
+        <button class="corner-card" data-action="complaint"><span class="corner-icon">✉</span><b>Register a complaint</b><small>Tell us about an issue or service delay.</small><span class="corner-arrow">↗</span></button>
+        <button class="corner-card" data-action="verify"><span class="corner-icon">✓</span><b>Certificate verification</b><small>Ask for help checking an issued certificate.</small><span class="corner-arrow">↗</span></button>
+        <button class="corner-card" data-action="reapply"><span class="corner-icon">↻</span><b>Apply again</b><small>Request a repeat service or correction.</small><span class="corner-arrow">↗</span></button>
+        <button class="corner-card" data-action="download"><span class="corner-icon">⇩</span><b>Download / print</b><small>Request a document copy or printout.</small><span class="corner-arrow">↗</span></button>
+      </div>
+    </section>
+
+    <section class="section documents" id="documents">
+      <div class="section-head"><div><div class="eyebrow">PUNJAB SERVICES · A–Z <i></i></div><h2>Find the service you need.</h2></div><p>Select an application to see its own preparation list and upload fields. Portal requirements and official charges can change, so Deep CSC confirms them before filing.</p></div>
+      <label class="searchbar"><span aria-hidden="true">⌕</span><input id="service-search" type="search" placeholder="Search any service: Aadhaar, PAN, voter card…" autocomplete="off" aria-label="Search services"><kbd>SEARCH</kbd></label>
+      <p class="search-feedback" id="service-search-feedback" aria-live="polite"></p>
+      <div class="letter-filter" id="letters" aria-label="Filter services alphabetically"></div>
+      <div class="document-grid" id="document-grid"></div>
+      <section class="application-panel" id="application-panel" hidden aria-live="polite"></section>
+      <p class="fineprint">Deep CSC is a local assistance service, not a government website. Eligibility, required proofs, processing time and official charges are confirmed with the relevant portal before an application is submitted.</p>
+    </section>
+
+    <section class="section steps-section">
+      <div class="section-head"><div><div class="eyebrow">SIMPLE PROCESS <i></i></div><h2>From request to completion.</h2></div></div>
+      <div class="steps-grid"><article><b>01</b><h3>Choose a service</h3><p>Open its own checklist and required upload fields.</p></article><article><b>02</b><h3>Share your proofs</h3><p>Review each JPG/PDF before sending it to Deep CSC.</p></article><article><b>03</b><h3>Confirm the amount</h3><p>We check the portal charge and Deep CSC service fee with you.</p></article><article><b>04</b><h3>Pay after approval</h3><p>Payment options appear only after the application and final amount are approved.</p></article></div>
+    </section>
+
+    <section class="section booking" id="booking">
+      <div class="booking-copy"><div class="eyebrow">CHHAJLI HOME VISIT <i></i></div><h2>Deep CSC can come to you.</h2><p>Home visits within 10 km of Chhajli are free. Beyond 10 km, the travel charge is ₹20 per additional kilometre. Send your address and preferred time; Deep CSC confirms the visit on WhatsApp.</p><div class="distance-note">First 10 km <span>FREE</span><i></i> Extra distance <span>₹20 / km</span></div></div>
+      <form id="booking-form" class="booking-form"><h3>Request a home visit</h3><label>Your name<input name="name" autocomplete="name" required placeholder="Full name"></label><label>WhatsApp number<input name="mobile" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required placeholder="10-digit mobile number"></label><label>Service<select name="service" required><option value="">Choose a service</option><option>Identity card / Aadhaar / PAN</option><option>Certificate application</option><option>Passport / Driving Licence</option><option>Pension / Welfare Scheme</option><option>Jobs / Admission / ITR</option><option>Bill payment / Print / Scan</option><option>Other enquiry</option></select></label><label>Home address and landmark<input name="address" required autocomplete="street-address" placeholder="Village, street, nearby landmark"></label><label>Preferred visit time<input name="visitTime" required placeholder="Day and time that suits you"></label><label>Distance from Chhajli (km)<input id="distance" name="distance" type="number" min="0" step="0.1" value="0" required></label><div class="charge" id="charge">Estimated travel charge <b>₹0</b></div><label class="form-consent"><input name="consent" type="checkbox" required><span>I agree to the <a href="legal.html#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="legal.html#terms" target="_blank" rel="noopener">Terms &amp; Conditions</a>, and consent to send this booking request to Deep CSC through WhatsApp.</span></label><button class="button button-dark send-button">Request on WhatsApp <span>↗</span></button></form>
+    </section>
+
+    <section class="section about-faq">
+      <article><div class="eyebrow">ABOUT DEEP CSC <i></i></div><h2>Your Chhajli digital service shop.</h2><p>Deep CSC is based in Chhajli, Sunam, and helps nearby Punjab customers with online forms, identity cards, certificates, welfare schemes, job and admission forms, bill assistance, printing and scanning. We explain the steps, check the documents with you and confirm charges before starting.</p><p class="fineprint">Open 24 hours · Customer messages are handled on WhatsApp.</p></article>
+      <article><div class="eyebrow">CUSTOMER QUESTIONS <i></i></div><h2>Know before you apply.</h2><details><summary>Are these official government fees?</summary><p>The fee list is Deep CSC’s working estimate based on the supplied rate notes. Government portal charges can change; the current amount is confirmed before payment.</p></details><details><summary>When do I pay?</summary><p>After Deep CSC has reviewed the files and confirmed the final amount. The payment screen is not active until the approved quote and gateway are configured.</p></details><details><summary>Does this preview store my documents?</summary><p>No. Files stay on your device until you choose a share app. Secure server storage is not connected in this preview.</p></details><details><summary>How do I contact Deep CSC?</summary><p>Message +91 94787 27562 on WhatsApp. Deep CSC is at Chhajli, Sunam.</p></details></article>
+    </section>
+  </main>
+
+  <footer class="footer"><a class="brand" href="#home"><span class="brand-mark">D</span><span>DEEP CSC<small>CHHAJLI · SUNAM</small></span></a><p>Open 24 hours · Chhajli, Sunam, Punjab</p><a href="https://wa.me/919478727562" target="_blank" rel="noopener noreferrer">WhatsApp +91 94787 27562 ↗</a><a href="mailto:deepcsc06@gmail.com">Email deepcsc06@gmail.com</a><nav class="legal-links" aria-label="Legal information"><a href="legal.html#privacy">Privacy</a><a href="legal.html#terms">Terms</a><a href="legal.html#cookies">Cookies</a><a href="legal.html#refunds">Refunds</a><button id="cookie-settings" type="button">Cookie choices</button></nav></footer>
+
+  <aside class="cookie-banner" id="cookie-banner" aria-label="Cookie choice" hidden><div><b>Cookie choices</b><p>Optional Google Fonts load only if accepted. The site does not use advertising or analytics trackers. <a href="legal.html#cookies" target="_blank" rel="noopener">Read the Cookie Policy</a></p></div><div class="cookie-actions"><button class="button button-quiet" id="reject-cookies" type="button">Reject optional</button><button class="button button-dark" id="accept-cookies" type="button">Accept optional</button></div></aside>
+  <dialog id="modal"><button class="modal-close" type="button" aria-label="Close">×</button><div id="modal-content"></div></dialog>
+  <div class="contact-dock"><span>CONTACT</span><a href="https://wa.me/919478727562" target="_blank" rel="noopener">WhatsApp ↗</a><button id="copy-contact" type="button">Copy number</button></div>
+</body>
+</html>
