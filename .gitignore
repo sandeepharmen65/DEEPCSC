@@ -33,3 +33,20 @@ coverage
 .amplify
 amplify_outputs*
 amplifyconfiguration*
+
+# Private runtime configuration and customer data must never enter Git.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+**/private-data/
+**/uploads/
+**/*.sqlite*
+**/*.db
+**/*.map
+**/__pycache__/
+**/*.py[cod]
+**/*.pem
+**/*.p12
+**/*.pfx
+**/id_rsa

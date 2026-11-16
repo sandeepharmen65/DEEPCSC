@@ -400,6 +400,7 @@
     Object.assign(pageCopy.en,{footerContact:'WhatsApp +91 94787 27562 ↗',privacyText:'Use uploaded documents only for the service requested. Secure production storage and deletion rules must be configured before collecting real documents online.'});
     Object.assign(pageCopy.pa,{footerContact:'WhatsApp +91 94787 27562 ↗',privacyText:'ਅਪਲੋਡ ਕੀਤੇ ਦਸਤਾਵੇਜ਼ ਸਿਰਫ਼ ਚੁਣੀ ਸੇਵਾ ਲਈ ਵਰਤੇ ਜਾਣ। ਅਸਲ ਦਸਤਾਵੇਜ਼ ਆਨਲਾਈਨ ਲੈਣ ਤੋਂ ਪਹਿਲਾਂ ਸੁਰੱਖਿਅਤ ਸਟੋਰੇਜ ਅਤੇ ਮਿਟਾਉਣ ਦੇ ਨਿਯਮ ਤਿਆਰ ਕਰਨੇ ਲਾਜ਼ਮੀ ਹਨ।'});
     Object.assign(pageCopy.hi,{footerContact:'WhatsApp +91 94787 27562 ↗',privacyText:'अपलोड किए दस्तावेज़ केवल चुनी गई सेवा के लिए उपयोग करें। असली दस्तावेज़ ऑनलाइन लेने से पहले सुरक्षित स्टोरेज और हटाने के नियम तैयार होने चाहिए।'});
+    const footerEmailLabels={en:'Email deepcsc06@gmail.com',pa:'ਈਮੇਲ deepcsc06@gmail.com',hi:'ईमेल deepcsc06@gmail.com'};
     const language=document.querySelector('#language');language.onchange=()=>{
       const copy=tr[language.value],page=pageCopy[language.value];document.documentElement.lang=language.value;
       document.querySelectorAll('.topbar nav a').forEach((el,index)=>el.textContent=page.nav[index]);document.querySelector('#account-open').textContent=page.login;document.querySelector('.topbar .button-dark').firstChild.textContent=page.wa+' ';
@@ -421,6 +422,7 @@
       document.querySelector('#charge').firstChild.textContent=page.charge+' ';
       document.querySelector('.about-faq article:first-child .fineprint').textContent=page.aboutSmall;
       document.querySelector('.footer>a[href*="wa.me"]').textContent=page.footerContact;
+      document.querySelector('.footer>a[href^="mailto:"]').textContent=footerEmailLabels[language.value];
       const policyLabels={en:['Privacy','Terms','Cookies','Refunds','Cookie choices'],pa:['ਪਰਦੇਦਾਰੀ','ਸ਼ਰਤਾਂ','ਕੂਕੀਜ਼','ਰਿਫੰਡ','ਕੂਕੀ ਚੋਣਾਂ'],hi:['गोपनीयता','शर्तें','कुकीज़','रिफंड','कुकी विकल्प']}[language.value];
       document.querySelectorAll('.legal-links a').forEach((link,index)=>link.textContent=policyLabels[index]);
       document.querySelector('#cookie-settings').textContent=policyLabels[4];
