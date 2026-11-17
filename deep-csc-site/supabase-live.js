@@ -6,7 +6,7 @@
   let account = null;
 
   function requireConfig() {
-    if (!url || !key) throw new Error('Deep CSC account service is not configured.');
+    if (!url || !key) throw new Error('Punjab CSC account service is not configured.');
   }
 
   function setSession(value) {
@@ -15,7 +15,7 @@
     const meta = session.user && session.user.user_metadata || {};
     account = session.user ? {
       id: session.user.id,
-      name: meta.full_name || 'Deep CSC customer',
+      name: meta.full_name || 'Punjab CSC customer',
       mobile: meta.mobile || '',
       email: session.user.email || ''
     } : null;
@@ -62,7 +62,7 @@
     try {
       response = await fetch(url + path, { method, headers, body, cache: 'no-store' });
     } catch {
-      throw new Error('Deep CSC secure account service could not be reached.');
+      throw new Error('Punjab CSC secure account service could not be reached.');
     }
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('json')
@@ -111,9 +111,52 @@
     if (!response.ok) {
       const message = data.msg || data.message || data.error_description || data.error;
       if (String(message).toLowerCase().includes('email not confirmed')) throw new Error('Confirm your email using the link we sent, then sign in.');
+      if (data.code === 'invalid_credentials' || String(message).toLowerCase().includes('invalid login credentials')) throw new Error('The email or password does not match. Use “Sign in with email code” if you can access the account inbox.');
       throw new Error(message || (isSignup ? 'Could not create the account. Check the details and try again.' : 'Sign-in failed. Check your verified email and password.'));
     }
     if (!data.access_token) return { status: 'confirm_email' };
+    setSession(data);
+    await ensureProfile();
+    return { status: 'signed_in', account };
+  }
+
+  async function requestEmailOtp(email) {
+    requireConfig();
+    const address = String(email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
+    const response = await fetch(url + '/auth/v1/otp', {
+      method: 'POST',
+      headers: { apikey: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: address, create_user: false }),
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data.msg || data.message || data.error_description || data.error;
+      if (data.code === 'email_address_not_authorized') throw new Error('Email code delivery is restricted to test addresses. The owner needs to connect a verified email sender before customer codes can be delivered.');
+      if (data.code === 'over_email_send_rate_limit') throw new Error(message || 'Please wait before requesting another email code.');
+      throw new Error(message || 'Could not send a sign-in code. Try again shortly.');
+    }
+    return { status: 'otp_sent' };
+  }
+
+  async function verifyEmailOtp(email, token) {
+    requireConfig();
+    const address = String(email || '').trim().toLowerCase();
+    const code = String(token || '').replace(/\D/g, '');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
+    if (!/^\d{6}$/.test(code)) throw new Error('Enter the complete 6-digit email code.');
+    const response = await fetch(url + '/auth/v1/verify', {
+      method: 'POST',
+      headers: { apikey: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: address, token: code, type: 'email' }),
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.access_token) {
+      const message = data.msg || data.message || data.error_description || data.error;
+      throw new Error(message || 'That code could not be verified. Request a new code and try again.');
+    }
     setSession(data);
     await ensureProfile();
     return { status: 'signed_in', account };
@@ -236,7 +279,7 @@
   async function enrollAuthenticator() {
     return request('/auth/v1/factors', {
       method: 'POST',
-      body: { factor_type: 'totp', friendly_name: 'Deep CSC owner authenticator' }
+      body: { factor_type: 'totp', friendly_name: 'Punjab CSC owner authenticator' }
     });
   }
 
@@ -261,7 +304,7 @@
 
   async function listOwnerApplications() {
     if (!account || account.email.toLowerCase() !== 'deepcsc06@gmail.com' || tokenClaims().aal !== 'aal2') {
-      throw new Error('Owner applications require the Deep CSC owner account and Google Authenticator verification.');
+      throw new Error('Owner applications require the Punjab CSC owner account and Google Authenticator verification.');
     }
     return request('/rest/v1/customer_applications?select=id,service,applicant_name,mobile,contact_email,notes,status,created_at,customer_documents(id,original_name,object_path,media_type,file_size_bytes)&order=created_at.desc');
   }
@@ -358,7 +401,7 @@
 
   function requireOwnerAal2() {
     if (!account || account.email.toLowerCase() !== 'deepcsc06@gmail.com' || tokenClaims().aal !== 'aal2') {
-      throw new Error('Owner dashboard data requires the Deep CSC owner account and Google Authenticator verification.');
+      throw new Error('Owner dashboard data requires the Punjab CSC owner account and Google Authenticator verification.');
     }
   }
 
@@ -397,6 +440,8 @@
 
   window.DeepCSCBackend = Object.freeze({
     auth,
+    requestEmailOtp,
+    verifyEmailOtp,
     initialize,
     getAccount: () => account,
     createApplication,
