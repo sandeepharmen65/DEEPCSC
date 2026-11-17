@@ -2,6 +2,8 @@
   const url = window.DEEP_CSC_SUPABASE_URL || '';
   const key = window.DEEP_CSC_SUPABASE_PUBLISHABLE_KEY || '';
   const bucket = 'deep-csc-private-documents';
+  const OWNER_EMAILS = new Set(['sandeepharmen@gmail.com']);
+  const isOwnerEmail = email => OWNER_EMAILS.has(String(email || '').trim().toLowerCase());
   let session = null;
   let account = null;
 
@@ -78,7 +80,7 @@
     if (!account || !session) throw new Error('Sign in first to continue.');
     // The owner account is authorized by its verified email and aal2 MFA claim;
     // it is not a customer profile and must not be blocked for lacking a mobile field.
-    if (account.email.toLowerCase() === 'deepcsc06@gmail.com') return;
+    if (isOwnerEmail(account.email)) return;
     if (!/^[6-9][0-9]{9}$/.test(account.mobile)) throw new Error('Your profile needs a WhatsApp mobile number. Register with your name and 10-digit mobile.');
     await request('/rest/v1/customer_profiles?on_conflict=user_id', {
       method: 'POST',
@@ -306,7 +308,7 @@
   }
 
   async function listOwnerApplications() {
-    if (!account || account.email.toLowerCase() !== 'deepcsc06@gmail.com' || tokenClaims().aal !== 'aal2') {
+    if (!account || !isOwnerEmail(account.email) || tokenClaims().aal !== 'aal2') {
       throw new Error('Owner applications require the Punjab CSC owner account and Google Authenticator verification.');
     }
     return request('/rest/v1/customer_applications?select=id,service,applicant_name,mobile,contact_email,notes,status,created_at,customer_documents(id,original_name,object_path,media_type,file_size_bytes)&order=created_at.desc');
@@ -403,7 +405,7 @@
   }
 
   function requireOwnerAal2() {
-    if (!account || account.email.toLowerCase() !== 'deepcsc06@gmail.com' || tokenClaims().aal !== 'aal2') {
+    if (!account || !isOwnerEmail(account.email) || tokenClaims().aal !== 'aal2') {
       throw new Error('Owner dashboard data requires the Punjab CSC owner account and Google Authenticator verification.');
     }
   }
@@ -419,7 +421,7 @@
 
   async function createOwnerDocumentLink(objectPath) {
     const path = String(objectPath || '').split('/').map(encodeURIComponent).join('/');
-    if (!path || !account || account.email.toLowerCase() !== 'deepcsc06@gmail.com' || tokenClaims().aal !== 'aal2') {
+    if (!path || !account || !isOwnerEmail(account.email) || tokenClaims().aal !== 'aal2') {
       throw new Error('Owner file access requires Google Authenticator verification.');
     }
     const result = await request('/storage/v1/object/sign/' + bucket + '/' + path, {
