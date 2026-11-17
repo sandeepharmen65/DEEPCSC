@@ -120,3 +120,16 @@ body{background:radial-gradient(ellipse at 50% -14%,#dff2ed 0,transparent 42%),v
 @media(hover:none){.hero-art img,.booking-form,.application-panel{transform:none}.corner-card:hover,.document-card:hover,.steps-grid article:hover{transform:translateY(-2px)}.hero-art img:hover{transform:translateY(-2px)}}
 @media(max-width:680px){.hero-copy{transform:none}.hero-art img{transform:rotateY(-3deg) rotateX(1deg);box-shadow:0 20px 0 -13px #04141c88,0 28px 48px #0008}.booking-form{transform:none}.booking-form:focus-within{transform:translateY(-2px)}.application-panel{transform:none}.steps-grid article:hover{transform:translateY(-2px)}}
 @media(prefers-reduced-motion:reduce){.hero-art img,.corner-card,.document-card,.steps-grid article,.booking-form,.application-panel,.button,.searchbar{transform:none!important}}
+
+
+/* Private Deep CSC owner dashboard */
+.owner-stat-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:16px 0}
+.owner-stat{padding:12px;border:1px solid #dce8e4;border-radius:12px;background:#fff}
+.owner-stat strong,.owner-stat small{display:block}.owner-stat strong{font-size:1.15rem;color:#123a37}.owner-stat small{color:#63746f}
+.owner-request-card{display:grid;gap:8px;padding:14px;margin:12px 0;border:1px solid #dce8e4;border-radius:14px;background:#fff}
+.owner-request-card h4,.owner-request-card p{margin:0}.owner-request-card select{max-width:220px;padding:10px;border:1px solid #c8d8d3;border-radius:9px;background:#fff;text-transform:capitalize}
+.owner-request-notes{white-space:pre-wrap;overflow-wrap:anywhere;color:#40534e}.owner-file-heading{font-weight:700;margin-top:6px!important}
+.owner-file-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #edf1ef}.owner-file-row span{overflow-wrap:anywhere}
+.owner-file-row a{display:block;color:#176b59;font-weight:700}.owner-totp-qr{display:block;width:min(240px,100%);height:auto;margin:12px auto;padding:12px;border:1px solid #dce8e4;border-radius:12px;background:#fff}
+.owner-error{color:#9b2828;overflow-wrap:anywhere}
+@media(max-width:600px){.owner-stat-row{grid-template-columns:1fr 1fr}.owner-request-card{padding:11px}}
