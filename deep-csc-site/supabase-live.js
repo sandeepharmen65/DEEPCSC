@@ -76,6 +76,9 @@
 
   async function ensureProfile() {
     if (!account || !session) throw new Error('Sign in first to continue.');
+    // The owner account is authorized by its verified email and aal2 MFA claim;
+    // it is not a customer profile and must not be blocked for lacking a mobile field.
+    if (account.email.toLowerCase() === 'deepcsc06@gmail.com') return;
     if (!/^[6-9][0-9]{9}$/.test(account.mobile)) throw new Error('Your profile needs a WhatsApp mobile number. Register with your name and 10-digit mobile.');
     await request('/rest/v1/customer_profiles?on_conflict=user_id', {
       method: 'POST',
