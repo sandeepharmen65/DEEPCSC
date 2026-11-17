@@ -278,7 +278,17 @@
   }
 
   async function listFactors() {
-    return request('/auth/v1/factors');
+    // Supabase lists a user's MFA factors on GET /auth/v1/user. The
+    // /auth/v1/factors route is enrollment-only (POST), so GET returns 405.
+    const user = await request('/auth/v1/user');
+    const grouped = { all: [], phone: [], totp: [], webauthn: [], recovery_code: [] };
+    for (const factor of Array.isArray(user && user.factors) ? user.factors : []) {
+      grouped.all.push(factor);
+      if (Object.prototype.hasOwnProperty.call(grouped, factor.factor_type)) {
+        grouped[factor.factor_type].push(factor);
+      }
+    }
+    return grouped;
   }
 
   async function enrollAuthenticator() {
