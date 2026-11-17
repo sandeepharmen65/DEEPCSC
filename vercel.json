@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "echo Static-site-deployment-no-package-install",
-  "buildCommand": "echo Static-site-build-no-op",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build:site",
   "framework": null,
-  "outputDirectory": "deep-csc-site",
+  "outputDirectory": "dist",
   "headers": [
     {
       "source": "/(.*)",
