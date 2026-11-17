@@ -225,7 +225,7 @@
     document.querySelector('#reject-cookies').onclick=()=>saveCookieChoice('rejected');
     document.querySelector('#cookie-settings').onclick=()=>{cookieBanner.hidden=false};
     const whatsapp=(message)=>window.open(`https://wa.me/${WA}?text=${encodeURIComponent(message)}`,'_blank','noopener,noreferrer');
-    async function loadOffers(){const target=document.querySelector('#active-offer');if(!target)return;try{const response=await fetch('/api/offers',{cache:'no-store'});if(!response.ok)return;const data=await response.json(),offer=data.offers?.[0];if(!offer)return;const inner=document.createElement('div');inner.className='offer-banner-inner';const copy=document.createElement('div');copy.className='offer-banner-copy';const kicker=document.createElement('span');kicker.className='offer-banner-kicker';kicker.textContent='SEASONAL DEEP CSC OFFER';const title=document.createElement('h2');title.textContent=offer.title;const description=document.createElement('p');description.textContent=offer.description;copy.append(kicker,title,description);inner.append(copy);if(offer.buttonLabel){const action=document.createElement('a');action.href=`https://wa.me/${WA}?text=${encodeURIComponent(`I would like details about: ${offer.title}`)}`;action.target='_blank';action.rel='noopener noreferrer';action.textContent=offer.buttonLabel;inner.append(action)}target.replaceChildren(inner);target.hidden=false}catch{target.hidden=true}};
+    async function loadOffers(){const target=document.querySelector('#active-offer');if(!target)return;try{const offers=await window.DeepCSCBackend.listPublicOffers(),offer=offers?.[0];if(!offer)return;const inner=document.createElement('div');inner.className='offer-banner-inner';const copy=document.createElement('div');copy.className='offer-banner-copy';const kicker=document.createElement('span');kicker.className='offer-banner-kicker';kicker.textContent='SEASONAL DEEP CSC OFFER';const title=document.createElement('h2');title.textContent=offer.title;const description=document.createElement('p');description.textContent=offer.message;copy.append(kicker,title,description);inner.append(copy);if(offer.button_label){const action=document.createElement('a');action.href=`https://wa.me/${WA}?text=${encodeURIComponent(`I would like details about: ${offer.title}`)}`;action.target='_blank';action.rel='noopener noreferrer';action.textContent=offer.button_label;inner.append(action)}target.replaceChildren(inner);target.hidden=false}catch{target.hidden=true}};
     const open=(html)=>{modal.classList.remove('auth-dialog','otp-dialog','checkout-dialog');body.innerHTML=html;if(!modal.open)modal.showModal()};
     document.querySelector('.modal-close').addEventListener('click',()=>modal.close());
     modal.addEventListener('click',(event)=>{if(event.target===modal)modal.close()});
@@ -357,24 +357,49 @@
     }
     async function showOwnerAccount(account){
       const backend=window.DeepCSCBackend;
-      open('<div class="auth-shell"><section class="auth-form"><div class="auth-brand"><span class="auth-mark">D</span><span>DEEP CSC<small>OWNER SECURITY</small></span></div><div class="auth-heading"><span>PRIVATE OWNER AREA</span><h2>Deep CSC dashboard</h2><p>Access to customer requests and document copies is limited to the verified business email plus Google Authenticator.</p></div><div id="owner-content" aria-live="polite">Checking owner security…</div><button class="auth-switch" type="button" id="owner-logout">Sign out</button></section><aside class="auth-welcome"><span class="welcome-kicker">DEEP CSC · OWNER</span><h2>Private operations.</h2><p>Customer information stays behind database access rules. Document links expire after 60 seconds.</p><div class="welcome-points"><span>✦ &nbsp; Verified owner email only</span><span>✦ &nbsp; Authenticator required</span><span>✦ &nbsp; Private document bucket</span></div></aside></div>');
+      open('<div class="auth-shell owner-auth-shell" id="owner-auth-shell"><section class="auth-form"><div class="auth-brand"><span class="auth-mark">D</span><span>DEEP CSC<small>OWNER SECURITY</small></span></div><div class="auth-heading"><span>PRIVATE OWNER AREA</span><h2>Deep CSC dashboard</h2><p>Access to customer requests and document copies is limited to the verified business email plus Google Authenticator.</p></div><div id="owner-content" class="owner-dashboard-content" aria-live="polite">Checking owner security…</div><button class="auth-switch" type="button" id="owner-logout">Sign out</button></section><aside class="auth-welcome"><span class="welcome-kicker">DEEP CSC · OWNER</span><h2>Private operations.</h2><p>Customer information stays behind database access rules. Document links expire after 60 seconds.</p><div class="welcome-points"><span>✦ &nbsp; Verified owner email only</span><span>✦ &nbsp; Authenticator required</span><span>✦ &nbsp; Private document bucket</span></div></aside></div>');
       modal.classList.add('auth-dialog');
       const content=body.querySelector('#owner-content');
       body.querySelector('#owner-logout').onclick=async()=>{await backend.signOut();clearSignedIn();modal.close();notify('Signed out.')};
       const errorBox=message=>{let note=content.querySelector('.owner-error');if(!note){note=document.createElement('p');note.className='password-note owner-error';content.append(note)}note.textContent=message};
       async function renderDashboard(){
         content.replaceChildren();
-        const heading=document.createElement('h3');heading.textContent='Live requests';
-        const hint=document.createElement('p');hint.className='password-note';hint.textContent='Payments are not connected. Confirm fees with the customer before accepting payment.';
+        const heading=document.createElement('h3');heading.textContent='Live business dashboard';
+        const hint=document.createElement('p');hint.className='password-note';hint.textContent='Online payments are disabled. Revenue is not recorded here. Refund entries below are manual notes only; verify the original payment before marking one processed.';
+        const toolbar=document.createElement('div');toolbar.className='owner-dashboard-toolbar';
+        const refresh=document.createElement('button');refresh.type='button';refresh.className='auth-switch';refresh.textContent='Refresh dashboard';refresh.onclick=()=>renderDashboard();
+        const exportButton=document.createElement('button');exportButton.type='button';exportButton.className='auth-submit';exportButton.textContent='Export to Excel (.csv)';
+        toolbar.append(refresh,exportButton);
         const stats=document.createElement('div');stats.className='owner-stat-row';
-        const list=document.createElement('div');list.className='owner-request-list';list.textContent='Loading private requests…';
-        content.append(heading,hint,stats,list);
+        const requestSection=document.createElement('section');requestSection.className='owner-dashboard-section';
+        const requestHeading=document.createElement('h4');requestHeading.textContent='New form applications and requests';
+        const list=document.createElement('div');list.className='owner-request-list';list.textContent='Loading private requests…';requestSection.append(requestHeading,list);
+        const offersSection=document.createElement('section');offersSection.className='owner-dashboard-section';
+        const offersHeading=document.createElement('h4');offersHeading.textContent='Festival banners and offers';
+        const offerHint=document.createElement('p');offerHint.className='password-note';offerHint.textContent='Schedule an offer to appear on the public website only during the dates you choose.';
+        const offerForm=document.createElement('form');offerForm.className='owner-admin-form';offerForm.innerHTML='<label>Offer title<input name="title" maxlength="100" required placeholder="Festival offer"></label><label>Message<input name="message" maxlength="280" required placeholder="What customers should know"></label><label>Button text<input name="buttonLabel" maxlength="36" value="Ask on WhatsApp" required></label><div class="owner-form-grid"><label>Starts<input name="startsAt" type="datetime-local" required></label><label>Ends<input name="endsAt" type="datetime-local" required></label></div><label class="owner-check"><input name="active" type="checkbox" checked><span>Publish during this scheduled period</span></label><button class="auth-submit" type="submit">Save offer</button>';
+        const offersList=document.createElement('div');offersList.className='owner-record-list';offersSection.append(offersHeading,offerHint,offerForm,offersList);
+        const refundsSection=document.createElement('section');refundsSection.className='owner-dashboard-section';
+        const refundsHeading=document.createElement('h4');refundsHeading.textContent='Refund records and status';
+        const refundHint=document.createElement('p');refundHint.className='password-note';refundHint.textContent='Manual tracking only. No refund is sent by this website, and these records are not verified against a payment gateway.';
+        const refundForm=document.createElement('form');refundForm.className='owner-admin-form';refundForm.innerHTML='<label>Related application<select name="applicationId"><option value="">No application reference</option></select></label><div class="owner-form-grid"><label>Refund amount (₹)<input name="amountRupees" type="number" min="0.01" step="0.01" required></label><label>Method<select name="method" required><option value="upi">UPI</option><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label></div><label>Reason<textarea name="reason" maxlength="500" required placeholder="Short reason for the manual refund record"></textarea></label><label>Payment reference (optional)<input name="paymentReference" maxlength="160" placeholder="Reference to check manually"></label><button class="auth-submit" type="submit">Add manual refund record</button>';
+        const refundsList=document.createElement('div');refundsList.className='owner-record-list';refundsSection.append(refundsHeading,refundHint,refundForm,refundsList);
+        const activitySection=document.createElement('section');activitySection.className='owner-dashboard-section';
+        const activityHeading=document.createElement('h4');activityHeading.textContent='Recent activity';
+        const activityList=document.createElement('div');activityList.className='owner-record-list';activityList.textContent='Loading activity…';activitySection.append(activityHeading,activityList);
+        content.append(heading,hint,toolbar,stats,requestSection,offersSection,refundsSection,activitySection);
         try{
-          const requests=await backend.listOwnerApplications(),today=new Date().toISOString().slice(0,10);
-          const counts=[['All requests',requests.length],['New requests',requests.filter(item=>item.status==='new').length],['Received today',requests.filter(item=>String(item.created_at).slice(0,10)===today).length],['Payments','Not connected']];
+          const startOfDay=new Date();startOfDay.setHours(0,0,0,0);
+          const [requests,customers,offers,refunds,events]=await Promise.all([
+            backend.listOwnerApplications(),backend.listOwnerCustomersSince(startOfDay.toISOString()),
+            backend.listOwnerOffers(),backend.listOwnerRefunds(),backend.listOwnerActivity()
+          ]);
+          const todayRequests=requests.filter(item=>new Date(item.created_at).toDateString()===new Date().toDateString()).length;
+          const counts=[['Total requests',requests.length],['New form requests',requests.filter(item=>item.status==='new').length],['Requests today',todayRequests],['New customer profiles today',customers.length],['Online revenue','Not connected']];
           counts.forEach(([label,value])=>{const card=document.createElement('div');card.className='owner-stat';const strong=document.createElement('strong');strong.textContent=String(value);const small=document.createElement('small');small.textContent=label;card.append(strong,small);stats.append(card)});
+          exportButton.onclick=()=>{const fields=['Reference','Service','Applicant','Mobile','Email','Status','Created','Notes'];const cell=value=>'"'+String(value??'').replace(/"/g,'""')+'"';const rows=requests.map(item=>[String(item.id).slice(0,8).toUpperCase(),item.service,item.applicant_name,item.mobile,item.contact_email,item.status,item.created_at,item.notes].map(cell).join(','));const csv='\uFEFF'+[fields.map(cell).join(','),...rows].join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const anchor=document.createElement('a');anchor.href=URL.createObjectURL(blob);anchor.download='deep-csc-applications.csv';anchor.click();URL.revokeObjectURL(anchor.href)};
           list.replaceChildren();
-          if(!requests.length){list.textContent='No customer requests have arrived yet.';return}
+          if(!requests.length){list.textContent='No customer requests have arrived yet.'}
           const statuses=['new','in_review','waiting_customer','completed','cancelled'];
           for(const request of requests){
             const card=document.createElement('article');card.className='owner-request-card';
@@ -385,7 +410,7 @@
             const status=document.createElement('select');status.setAttribute('aria-label','Application status');
             statuses.forEach(value=>{const option=document.createElement('option');option.value=value;option.textContent=value.replaceAll('_',' ');status.append(option)});
             status.value=request.status;
-            status.onchange=async()=>{status.disabled=true;try{await backend.updateApplicationStatus(request.id,status.value);notify('Application status updated.')}catch(error){notify(error.message);status.value=request.status}finally{status.disabled=false}};
+            status.onchange=async()=>{const previous=request.status;status.disabled=true;try{await backend.updateApplicationStatus(request.id,status.value);request.status=status.value;notify('Application status updated. Refresh for the activity entry.')}catch(error){notify(error.message);status.value=previous}finally{status.disabled=false}};
             card.append(title,customer,meta,notes,status);
             const docs=request.customer_documents||[];
             if(docs.length){
@@ -398,9 +423,20 @@
                 row.append(fileName,makeLink);card.append(row)
               }
             }
-            list.append(card)
+            list.append(card);
+            const option=document.createElement('option');option.value=request.id;option.textContent=String(request.id).slice(0,8).toUpperCase()+' · '+request.service+' · '+request.applicant_name;refundForm.elements.applicationId.append(option);
           }
-        }catch(error){list.textContent=error.message}
+          offersList.replaceChildren();
+          if(!offers.length)offersList.textContent='No offers are scheduled.';
+          for(const offer of offers){const row=document.createElement('article');row.className='owner-record-card';const title=document.createElement('strong');title.textContent=offer.title;const message=document.createElement('p');message.textContent=offer.message;const dates=document.createElement('small');dates.textContent=new Date(offer.starts_at).toLocaleString()+' – '+new Date(offer.ends_at).toLocaleString();const state=document.createElement('span');state.className='owner-record-state';state.textContent=offer.active?'Scheduled / live':'Hidden';const toggle=document.createElement('button');toggle.type='button';toggle.className='auth-switch';toggle.textContent=offer.active?'Pause offer':'Publish offer';toggle.onclick=async()=>{toggle.disabled=true;try{await backend.updateOwnerOffer(offer.id,!offer.active);await renderDashboard()}catch(error){toggle.disabled=false;notify(error.message)}};const remove=document.createElement('button');remove.type='button';remove.className='auth-switch';remove.textContent='Delete';remove.onclick=async()=>{if(!confirm('Delete this offer?'))return;remove.disabled=true;try{await backend.deleteOwnerOffer(offer.id);await renderDashboard()}catch(error){remove.disabled=false;notify(error.message)}};row.append(title,message,dates,state,toggle,remove);offersList.append(row)}
+          offerForm.onsubmit=async(event)=>{event.preventDefault();const data=new FormData(offerForm),save=offerForm.querySelector('button[type=submit]');save.disabled=true;try{await backend.saveOwnerOffer({title:data.get('title'),message:data.get('message'),buttonLabel:data.get('buttonLabel'),startsAt:new Date(data.get('startsAt')).toISOString(),endsAt:new Date(data.get('endsAt')).toISOString(),active:data.get('active')==='on'});notify('Offer saved. The banner appears only in its scheduled window.');await renderDashboard()}catch(error){notify(error.message);save.disabled=false}};
+          refundsList.replaceChildren();
+          if(!refunds.length)refundsList.textContent='No manual refund records.';
+          for(const refund of refunds){const row=document.createElement('article');row.className='owner-record-card';const customer=refund.customer_applications||{};const title=document.createElement('strong');title.textContent='₹'+(Number(refund.amount_paise)/100).toFixed(2)+' · '+(customer.applicant_name||'No linked customer');const reason=document.createElement('p');reason.textContent=refund.reason+(refund.payment_reference?' · Ref '+refund.payment_reference:'');const meta=document.createElement('small');meta.textContent=(customer.service||'Manual record')+' · '+refund.method.replaceAll('_',' ')+' · '+new Date(refund.created_at).toLocaleString();const status=document.createElement('select');status.setAttribute('aria-label','Manual refund status');['pending','approved','processed','declined'].forEach(value=>{const option=document.createElement('option');option.value=value;option.textContent=value.replaceAll('_',' ');status.append(option)});status.value=refund.status;status.onchange=async()=>{const previous=refund.status;status.disabled=true;try{await backend.updateOwnerRefundStatus(refund.id,status.value);refund.status=status.value;notify('Manual refund status recorded.')}catch(error){status.value=previous;notify(error.message)}finally{status.disabled=false}};row.append(title,reason,meta,status);refundsList.append(row)}
+          activityList.replaceChildren();
+          if(!events.length)activityList.textContent='No activity has been recorded yet.';
+          for(const event of events){const row=document.createElement('article');row.className='owner-record-card';const label=document.createElement('strong');label.textContent=event.event_type.replaceAll('_',' ');const details=document.createElement('p');const bits=Object.entries(event.details||{}).map(([key,value])=>key.replaceAll('_',' ')+': '+value);if(event.application_id)bits.unshift('Application '+String(event.application_id).slice(0,8).toUpperCase());if(event.offer_id)bits.unshift('Offer '+String(event.offer_id).slice(0,8).toUpperCase());if(event.refund_id)bits.unshift('Refund '+String(event.refund_id).slice(0,8).toUpperCase());details.textContent=bits.join(' · ')||'Recorded activity';const time=document.createElement('small');time.textContent=new Date(event.created_at).toLocaleString();row.append(label,details,time);activityList.append(row)}
+        }catch(error){list.textContent=error.message;activityList.textContent='Dashboard could not load all sections. Refresh after checking the owner session.'}
       }
       try{
         if(backend.getAssuranceLevel()==='aal2'){await renderDashboard();return}

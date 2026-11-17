@@ -266,6 +266,102 @@
     return request('/rest/v1/customer_applications?select=id,service,applicant_name,mobile,contact_email,notes,status,created_at,customer_documents(id,original_name,object_path,media_type,file_size_bytes)&order=created_at.desc');
   }
 
+  async function listPublicOffers() {
+    const now = encodeURIComponent(new Date().toISOString());
+    return request('/rest/v1/site_offers?select=id,title,message,button_label,starts_at,ends_at&active=eq.true&starts_at=lte.' + now + '&ends_at=gt.' + now + '&order=starts_at.desc&limit=1', { auth: false });
+  }
+
+  async function listOwnerCustomersSince(isoTime) {
+    requireOwnerAal2();
+    return request('/rest/v1/customer_profiles?select=created_at&created_at=gte.' + encodeURIComponent(isoTime));
+  }
+
+  async function listOwnerOffers() {
+    requireOwnerAal2();
+    return request('/rest/v1/site_offers?select=id,title,message,button_label,starts_at,ends_at,active,created_at&order=starts_at.desc');
+  }
+
+  async function saveOwnerOffer(offer) {
+    requireOwnerAal2();
+    const values = {
+      title: String(offer.title || '').trim(),
+      message: String(offer.message || '').trim(),
+      button_label: String(offer.buttonLabel || 'Ask on WhatsApp').trim(),
+      starts_at: offer.startsAt,
+      ends_at: offer.endsAt,
+      active: Boolean(offer.active)
+    };
+    if (!values.title || values.title.length > 100 || !values.message || values.message.length > 280 || values.button_label.length > 36 || !(Date.parse(values.starts_at) < Date.parse(values.ends_at))) {
+      throw new Error('Check the offer title, 280-character message, and start/end times.');
+    }
+    return request('/rest/v1/site_offers', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: { ...values, created_by: account.id }
+    });
+  }
+
+  async function updateOwnerOffer(offerId, active) {
+    requireOwnerAal2();
+    if (!/^[0-9a-f-]{36}$/i.test(String(offerId || ''))) throw new Error('Offer reference is not valid.');
+    return request('/rest/v1/site_offers?id=eq.' + encodeURIComponent(offerId), {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: { active: Boolean(active) }
+    });
+  }
+
+  async function deleteOwnerOffer(offerId) {
+    requireOwnerAal2();
+    if (!/^[0-9a-f-]{36}$/i.test(String(offerId || ''))) throw new Error('Offer reference is not valid.');
+    return request('/rest/v1/site_offers?id=eq.' + encodeURIComponent(offerId), { method: 'DELETE' });
+  }
+
+  async function listOwnerRefunds() {
+    requireOwnerAal2();
+    return request('/rest/v1/manual_refunds?select=id,application_id,amount_paise,method,status,reason,payment_reference,owner_notes,created_at,customer_applications(applicant_name,mobile,service)&order=created_at.desc');
+  }
+
+  async function createOwnerRefund(input) {
+    requireOwnerAal2();
+    const amountPaise = Math.round(Number(input.amountRupees) * 100);
+    if (!Number.isSafeInteger(amountPaise) || amountPaise < 1 || amountPaise > 1000000000) throw new Error('Enter a valid refund amount in rupees.');
+    const method = String(input.method || '');
+    if (!['upi', 'cash', 'bank_transfer', 'other'].includes(method)) throw new Error('Choose a refund method.');
+    const reason = String(input.reason || '').trim();
+    if (!reason || reason.length > 500) throw new Error('Add a short refund reason (up to 500 characters).');
+    const applicationId = String(input.applicationId || '');
+    if (applicationId && !/^[0-9a-f-]{36}$/i.test(applicationId)) throw new Error('Application reference is not valid.');
+    const row = {
+      application_id: applicationId || null,
+      amount_paise: amountPaise,
+      method,
+      reason,
+      payment_reference: String(input.paymentReference || '').trim().slice(0, 160) || null,
+      owner_notes: String(input.ownerNotes || '').trim().slice(0, 1000),
+      created_by: account.id
+    };
+    return request('/rest/v1/manual_refunds', { method: 'POST', headers: { Prefer: 'return=representation' }, body: row });
+  }
+
+  async function updateOwnerRefundStatus(refundId, status) {
+    requireOwnerAal2();
+    if (!/^[0-9a-f-]{36}$/i.test(String(refundId || ''))) throw new Error('Refund reference is not valid.');
+    if (!['pending', 'approved', 'processed', 'declined'].includes(status)) throw new Error('Choose a valid refund status.');
+    return request('/rest/v1/manual_refunds?id=eq.' + encodeURIComponent(refundId), {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: { status, updated_at: new Date().toISOString() }
+    });
+  }
+
+  async function listOwnerActivity() {
+    requireOwnerAal2();
+    return request('/rest/v1/customer_activity?select=id,event_type,application_id,offer_id,refund_id,details,created_at&order=created_at.desc&limit=50');
+  }
+
+  function requireOwnerAal2() {
+    if (!account || account.email.toLowerCase() !== 'deepcsc06@gmail.com' || tokenClaims().aal !== 'aal2') {
+      throw new Error('Owner dashboard data requires the Deep CSC owner account and Google Authenticator verification.');
+    }
+  }
+
   async function updateApplicationStatus(applicationId, status) {
     if (!['new', 'in_review', 'waiting_customer', 'completed', 'cancelled'].includes(status)) throw new Error('Choose a valid application status.');
     return request('/rest/v1/customer_applications?id=eq.' + encodeURIComponent(applicationId), {
@@ -314,6 +410,16 @@
     removeAuthenticator,
     getAssuranceLevel: () => tokenClaims().aal || 'aal1',
     listOwnerApplications,
+    listPublicOffers,
+    listOwnerCustomersSince,
+    listOwnerOffers,
+    saveOwnerOffer,
+    updateOwnerOffer,
+    deleteOwnerOffer,
+    listOwnerRefunds,
+    createOwnerRefund,
+    updateOwnerRefundStatus,
+    listOwnerActivity,
     updateApplicationStatus,
     createOwnerDocumentLink,
     signOut

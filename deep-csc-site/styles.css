@@ -133,3 +133,34 @@ body{background:radial-gradient(ellipse at 50% -14%,#dff2ed 0,transparent 42%),v
 .owner-file-row a{display:block;color:#176b59;font-weight:700}.owner-totp-qr{display:block;width:min(240px,100%);height:auto;margin:12px auto;padding:12px;border:1px solid #dce8e4;border-radius:12px;background:#fff}
 .owner-error{color:#9b2828;overflow-wrap:anywhere}
 @media(max-width:600px){.owner-stat-row{grid-template-columns:1fr 1fr}.owner-request-card{padding:11px}}
+
+/* The private owner workspace is intentionally scrollable on every screen. */
+.owner-auth-shell{width:min(1080px,100%);min-height:0;max-height:calc(100dvh - 56px);display:block;overflow:auto;overscroll-behavior:contain;scrollbar-color:#71968a #e8eee8}
+.owner-auth-shell>.auth-form{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:12px;padding:clamp(20px,4vw,42px)}
+.owner-dashboard-content{min-width:0}
+.owner-dashboard-toolbar{display:flex;flex-wrap:wrap;gap:9px;margin:12px 0}
+.owner-dashboard-toolbar .auth-submit,.owner-dashboard-toolbar .auth-switch{width:auto;min-height:40px;margin:0}
+.owner-dashboard-toolbar .auth-switch{border-color:#cbdad1;background:#fff;color:#235342}
+.owner-dashboard-content>h3{margin:14px 0 6px;color:#153d34;font:700 24px Outfit}
+.owner-dashboard-content>h4{margin:0 0 10px;color:#20493d}
+.owner-dashboard-content .password-note{margin:5px 0;line-height:1.6}
+.owner-dashboard-content .owner-stat-row{grid-template-columns:repeat(auto-fit,minmax(128px,1fr))}
+.owner-stat{min-height:72px;box-shadow:0 3px 0 #e9efeb}
+.owner-dashboard-section{margin:15px 0;padding:16px;border:1px solid #dce8e4;border-radius:14px;background:#f8fbf8}
+.owner-dashboard-section>h4{margin:0 0 10px;color:#153d34;font:700 16px Outfit}
+.owner-admin-form{display:grid;gap:10px;margin:12px 0;padding:14px;border:1px solid #e0eae4;border-radius:12px;background:#fff}
+.owner-admin-form label{display:grid;gap:6px;color:#536f5e;font-size:10px;font-weight:800}
+.owner-admin-form input,.owner-admin-form select,.owner-admin-form textarea,.owner-dashboard-content select{width:100%;min-width:0;min-height:40px;padding:9px 11px;border:1px solid #dce1d4;border-radius:8px;background:#fffdf8;color:#213f32;font:500 12px 'DM Sans',Arial,sans-serif}
+.owner-admin-form textarea{min-height:74px;resize:vertical}
+.owner-admin-form .owner-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.owner-admin-form .owner-check{display:flex;align-items:center;gap:8px}
+.owner-admin-form .owner-check input{width:16px;min-height:16px;accent-color:#176b4b}
+.owner-admin-form .auth-submit{max-width:360px}
+.owner-record-list{display:grid;gap:9px;min-width:0}
+.owner-record-card{display:grid;gap:8px;min-width:0;padding:13px;border:1px solid #dce8e4;border-radius:11px;background:#fff;overflow-wrap:anywhere}
+.owner-record-card p,.owner-record-card small{margin:0;color:#60746c;line-height:1.5}
+.owner-record-card strong{color:#173d34}
+.owner-record-card .auth-switch{border-color:#cbdad1;background:#f5faf6;color:#235342}
+.owner-record-card select{max-width:240px;text-transform:capitalize}
+.owner-record-state{color:#176b4b;font-size:10px;font-weight:800}
+@media(max-width:700px){.owner-auth-shell{max-height:calc(100dvh - 20px);border-radius:15px}.owner-auth-shell>.auth-form{padding:18px 14px 22px}.owner-dashboard-section{padding:12px}.owner-admin-form{padding:11px}.owner-admin-form .owner-form-grid{grid-template-columns:1fr}.owner-dashboard-content .owner-stat-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
