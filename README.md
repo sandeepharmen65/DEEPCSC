@@ -11,6 +11,7 @@ Responsive service website for Deep CSC, Chhajli, Sunam, Punjab.
 - Native device share flow so a customer chooses WhatsApp or another target to send the actual attachment.
 - Customer request list and delete-request action.
 - Private owner queue for deepcsc06@gmail.com; customer data and document access require a verified TOTP authenticator session (aal2).
+- Owner dashboard includes customer/request counts, CSV export, date-scheduled public offer banners, manual refund-status records, and an owner-only activity log.
 - Signed document links expire after 60 seconds. The storage bucket is private.
 - Online checkout, SMS OTP, automated government submissions, and payment reporting are not active.
 
@@ -36,7 +37,7 @@ Before customers register, in Supabase Dashboard open Authentication → URL Con
 
 Keep email confirmation enabled. The owner dashboard is available only after signing in with the verified business email and enrolling/verifying a TOTP authenticator in the owner screen. Customer accounts use verified email and password; phone/SMS OTP is not configured.
 
-Deploy website changes by pushing to the GitHub branch connected to Vercel. The three SQL migrations already applied to the live database are kept in `supabase/migrations/`; review them before using this setup on another project.
+Deploy website changes by pushing to the GitHub branch connected to Vercel. The six SQL migrations applied to the live database are kept in `supabase/migrations/`; review them before using this setup on another project. Refund entries are internal manual notes only, and online checkout/revenue automation remains disabled until a server-side payment gateway is configured.
 
 ## Payment status
 
