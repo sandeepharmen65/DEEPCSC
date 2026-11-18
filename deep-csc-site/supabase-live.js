@@ -199,7 +199,7 @@
         service: input.service,
         applicant_name: input.name,
         mobile: input.mobile,
-        contact_email: input.email || account.email || '',
+        contact_email: input.useAccountEmail === false ? (input.email || '') : (input.email || account.email || ''),
         notes: input.notes || ''
       }
     });
