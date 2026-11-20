@@ -353,6 +353,23 @@
       if(ownerOnly)body.querySelectorAll('[data-mode]').forEach((button)=>button.remove());
       const emailCodeButton=body.querySelector('#email-otp-start');
       if(emailCodeButton)emailCodeButton.onclick=()=>otp(body.querySelector('[name="email"]').value);
+      if(!ownerOnly){
+        const forgotPasswordButton=document.createElement('button');
+        forgotPasswordButton.type='button';
+        forgotPasswordButton.className='otp-link';
+        forgotPasswordButton.id='forgot-password-start';
+        forgotPasswordButton.textContent='Forgot password?';
+        emailCodeButton?.insertAdjacentElement('afterend',forgotPasswordButton);
+        forgotPasswordButton.onclick=async()=>{
+          const email=String(body.querySelector('[name="email"]').value||'').trim().toLowerCase();
+          const note=body.querySelector('.auth-preview-note');
+          if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){note.textContent='Enter the email address on your customer account first.';body.querySelector('[name="email"]').focus();return}
+          forgotPasswordButton.disabled=true;note.textContent='Requesting a secure password reset code…';
+          try{await window.DeepCSCBackend.requestPasswordRecoveryOtp(email);await otp(email,'recovery')}
+          catch(error){note.textContent=error.message}
+          finally{forgotPasswordButton.disabled=false}
+        };
+      }
       body.querySelector('#auth-form').onsubmit=async(event)=>{
         event.preventDefault();const form=event.currentTarget,data=new FormData(form),note=body.querySelector('.auth-preview-note'),password=String(data.get('password')||'');
         if(registering&&password!==data.get('confirm')){note.textContent='Passwords do not match. Please check both password fields.';return}
@@ -667,6 +684,15 @@
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)){notify('Enter your account email first.');emailInput?.focus();return}
       open(`<section class="otp-screen"><div class="otp-glow otp-glow-teal"></div><div class="otp-glow otp-glow-blue"></div><div class="otp-glow otp-glow-orange"></div><header class="otp-topline"><span><i class="otp-brand-mark">P</i> PUNJAB CSC <small>CHHAJLI · SUNAM</small></span><span class="otp-secure-label">SECURE CUSTOMER ACCESS</span></header><form class="otp-card" id="otp-form"><div class="otp-card-icon">✦</div><span class="otp-kicker">EMAIL OTP VERIFICATION</span><h1>${signupVerification?'Verify your email':'Check your email'}</h1><p>${signupVerification?'Enter the 6-digit code sent to':'Enter the 6-digit sign-in code sent to'} <strong id="otp-email-address"></strong>${signupVerification?'. No email link is needed.':' . If your email shows a sign-in link instead, tap that link.'}</p><div class="otp-row">${Array.from({length:6},(_,i)=>`<input aria-label="OTP digit ${i+1}" inputmode="numeric" maxlength="1" pattern="[0-9]" ${i===0?'autocomplete="one-time-code"':''} required>`).join('')}</div><button class="otp-verify" type="submit">${signupVerification?'Verify email & create account':'Verify code'} <span>→</span></button><button class="otp-back" type="button" id="otp-resend" disabled>Send a new code</button><button class="otp-back" type="button" id="otp-back">${signupVerification?'← &nbsp; Back to registration':'← &nbsp; Back to sign in'}</button><small class="otp-preview-note" id="otp-status" role="status" aria-live="polite">${signupVerification?'A 6-digit verification code was sent to this email. Check Inbox and Spam.':'A code is sent only when the email belongs to an existing account. If no email arrives, the owner needs to connect a verified email sender.'}</small></form><footer class="otp-foot">PUNJAB CSC <span>·</span> CHHAJLI, SUNAM <span>·</span> 24 HOURS</footer></section>`);
       modal.classList.add('auth-dialog','otp-dialog');
+      if(purpose==='recovery'){
+        body.querySelector('.otp-card h1').textContent='Reset your password';
+        const prompt=body.querySelector('.otp-card > p');
+        prompt.textContent='Enter the 6-digit password reset code sent to ';
+        const addressLabel=document.createElement('strong');addressLabel.id='otp-email-address';prompt.append(addressLabel,document.createTextNode('.'));
+        body.querySelector('.otp-verify').innerHTML='Verify code <span>→</span>';
+        body.querySelector('#otp-status').textContent='If an account uses this email, a reset code has been sent. Check Inbox and Spam.';
+        body.querySelector('#otp-back').textContent='←  Back to sign in';
+      }
       body.querySelector('#otp-email-address').textContent=address;
       const fields=[...body.querySelectorAll('.otp-row input')],status=body.querySelector('#otp-status'),resend=body.querySelector('#otp-resend');
       if(otpCooldownTimer)clearInterval(otpCooldownTimer);
@@ -684,16 +710,35 @@
         resend.disabled=true;status.textContent='Sending a secure email code…';
         try{
           if(signupVerification)await window.DeepCSCBackend.resendSignupOtp(address);
+          else if(purpose==='recovery')await window.DeepCSCBackend.requestPasswordRecoveryOtp(address);
           else await window.DeepCSCBackend.requestEmailOtp(address);
-          status.textContent=signupVerification?'A new signup code was requested. Check Inbox and Spam.':'If this email has a customer account, its 6-digit code is on the way. Check Inbox and Spam.';
+          status.textContent=signupVerification?'A new signup code was requested. Check Inbox and Spam.':purpose==='recovery'?'If an account uses this email, a new reset code has been requested. Check Inbox and Spam.':'If this email has a customer account, its 6-digit code is on the way. Check Inbox and Spam.';
           startResendCooldown();
         }catch(error){status.textContent=error.message;const match=String(error.message).match(/after\s+(\d+)\s+seconds/i);if(match)startResendCooldown(Math.max(1,Number(match[1]))*1000);else resend.disabled=false}
       };
       resend.onclick=sendCode;
-      body.querySelector('#otp-form').onsubmit=async(event)=>{event.preventDefault();const code=fields.map((field)=>field.value).join('');if(code.length!==6){status.textContent='Enter all 6 digits.';return}const submit=body.querySelector('.otp-verify');submit.disabled=true;status.textContent='Verifying your code…';try{await window.DeepCSCBackend.verifyEmailOtp(address,code);const signedInAccount=window.DeepCSCBackend.getAccount();setSignedIn(signedInAccount);if(isOwnerEmail(signedInAccount?.email)){await showOwnerAccount(signedInAccount);return}notify(signupVerification?'Email verified. Your account is ready.':'Signed in securely with your email code.');setTimeout(()=>{if(modal.open)modal.close()},700)}catch(error){status.textContent=error.message}finally{submit.disabled=false}};
+      body.querySelector('#otp-form').onsubmit=async(event)=>{event.preventDefault();const code=fields.map((field)=>field.value).join('');if(code.length!==6){status.textContent='Enter all 6 digits.';return}const submit=body.querySelector('.otp-verify');submit.disabled=true;status.textContent='Verifying your code…';try{await window.DeepCSCBackend.verifyEmailOtp(address,code,purpose==='recovery'?'recovery':'email');if(purpose==='recovery'){await setNewPassword(address);return}const signedInAccount=window.DeepCSCBackend.getAccount();setSignedIn(signedInAccount);if(isOwnerEmail(signedInAccount?.email)){await showOwnerAccount(signedInAccount);return}notify(signupVerification?'Email verified. Your account is ready.':'Signed in securely with your email code.');setTimeout(()=>{if(modal.open)modal.close()},700)}catch(error){status.textContent=error.message}finally{submit.disabled=false}};
       fields[0]?.focus();
-      if(signupVerification)startResendCooldown();
+      if(signupVerification||purpose==='recovery')startResendCooldown();
       else await sendCode();
+    }
+
+    async function setNewPassword(email){
+      open(`<section class="otp-screen"><div class="otp-glow otp-glow-teal"></div><div class="otp-glow otp-glow-blue"></div><div class="otp-glow otp-glow-orange"></div><header class="otp-topline"><span><i class="otp-brand-mark">P</i> PUNJAB CSC <small>CHHAJLI · SUNAM</small></span><span class="otp-secure-label">SECURE CUSTOMER ACCESS</span></header><form class="otp-card" id="password-reset-form"><div class="otp-card-icon">✦</div><span class="otp-kicker">PASSWORD RECOVERY</span><h1>Choose a new password</h1><p>Verified account: <strong id="reset-email-address"></strong></p><label class="otp-password-label">New password<input name="newPassword" type="password" autocomplete="new-password" minlength="12" required placeholder="12+ characters, upper & lower case, number"></label><label class="otp-password-label">Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" required placeholder="Enter the new password again"></label><button class="otp-verify" type="submit" id="password-reset-submit">Save new password <span>→</span></button><button class="otp-back" type="button" id="password-reset-back">Back to sign in</button><small class="otp-preview-note" id="password-reset-status" role="status" aria-live="polite">Use at least 12 characters with uppercase, lowercase and a number.</small></form><footer class="otp-foot">PUNJAB CSC <span>·</span> CHHAJLI, SUNAM <span>·</span> 24 HOURS</footer></section>`);
+      modal.classList.add('auth-dialog','otp-dialog');
+      body.querySelector('#reset-email-address').textContent=email;
+      body.querySelector('#password-reset-back').onclick=async()=>{await window.DeepCSCBackend.signOut();clearSignedIn();auth('login')};
+      body.querySelector('#password-reset-form').onsubmit=async(event)=>{
+        event.preventDefault();
+        const form=event.currentTarget,data=new FormData(form),password=String(data.get('newPassword')||''),confirm=String(data.get('confirmPassword')||''),status=body.querySelector('#password-reset-status'),submit=body.querySelector('#password-reset-submit');
+        if(password!==confirm){status.textContent='Passwords do not match. Please check both fields.';return}
+        if(password.length<12||!/[A-Z]/.test(password)||!/[a-z]/.test(password)||!/[0-9]/.test(password)){status.textContent='Use at least 12 characters with uppercase, lowercase and a number.';return}
+        submit.disabled=true;status.textContent='Updating your password securely…';
+        try{await window.DeepCSCBackend.updatePassword(password);await window.DeepCSCBackend.signOut();clearSignedIn();notify('Password updated. Sign in with your new password.');auth('login')}
+        catch(error){status.textContent=error.message}
+        finally{submit.disabled=false}
+      };
+      body.querySelector('[name="newPassword"]')?.focus();
     }
 
     const pageCopy={

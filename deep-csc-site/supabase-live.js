@@ -164,16 +164,36 @@
     return { status: 'otp_sent' };
   }
 
-  async function verifyEmailOtp(email, token) {
+  async function requestPasswordRecoveryOtp(email) {
+    requireConfig();
+    const address = String(email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
+    const response = await fetch(url + '/auth/v1/recover', {
+      method: 'POST',
+      headers: { apikey: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: address }),
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data.msg || data.message || data.error_description || data.error;
+      if (data.code === 'over_email_send_rate_limit') throw new Error(message || 'Please wait before requesting another reset code.');
+      throw new Error(message || 'Could not send a reset code. Try again shortly.');
+    }
+    return { status: 'otp_sent' };
+  }
+
+  async function verifyEmailOtp(email, token, type = 'email') {
     requireConfig();
     const address = String(email || '').trim().toLowerCase();
     const code = String(token || '').replace(/\D/g, '');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
     if (!/^\d{6}$/.test(code)) throw new Error('Enter the complete 6-digit email code.');
+    if (!['email', 'recovery'].includes(type)) throw new Error('Choose a valid email verification purpose.');
     const response = await fetch(url + '/auth/v1/verify', {
       method: 'POST',
       headers: { apikey: key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: address, token: code, type: 'email' }),
+      body: JSON.stringify({ email: address, token: code, type }),
       cache: 'no-store'
     });
     const data = await response.json().catch(() => ({}));
@@ -184,6 +204,27 @@
     setSession(data);
     await ensureProfile();
     return { status: 'signed_in', account };
+  }
+
+  async function updatePassword(password) {
+    requireConfig();
+    const nextPassword = String(password || '');
+    if (!session || !session.access_token) throw new Error('Verify the password reset code before choosing a new password.');
+    if (nextPassword.length < 12 || !/[A-Z]/.test(nextPassword) || !/[a-z]/.test(nextPassword) || !/[0-9]/.test(nextPassword)) {
+      throw new Error('Use at least 12 characters with uppercase, lowercase and a number.');
+    }
+    const response = await fetch(url + '/auth/v1/user', {
+      method: 'PUT',
+      headers: { apikey: key, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: nextPassword }),
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data.msg || data.message || data.error_description || data.error;
+      throw new Error(message || 'Could not update the password. Request a new reset code and try again.');
+    }
+    return { status: 'password_updated' };
   }
 
   async function initialize() {
@@ -476,7 +517,9 @@
     auth,
     requestEmailOtp,
     resendSignupOtp,
+    requestPasswordRecoveryOtp,
     verifyEmailOtp,
+    updatePassword,
     initialize,
     getAccount: () => account,
     createApplication,
