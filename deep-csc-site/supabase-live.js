@@ -115,7 +115,7 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const message = data.msg || data.message || data.error_description || data.error;
-      if (String(message).toLowerCase().includes('email not confirmed')) throw new Error('Confirm your email using the link we sent, then sign in.');
+      if (String(message).toLowerCase().includes('email not confirmed')) throw new Error('Verify your email with the 6-digit signup code. Return to Sign up to request another code, then sign in.');
       if (data.code === 'invalid_credentials' || String(message).toLowerCase().includes('invalid login credentials')) throw new Error('The email or password does not match. Use “Sign in with email code” if you can access the account inbox.');
       throw new Error(message || (isSignup ? 'Could not create the account. Check the details and try again.' : 'Sign-in failed. Check your verified email and password.'));
     }
@@ -141,6 +141,25 @@
       if (data.code === 'email_address_not_authorized') throw new Error('Email code delivery is restricted to test addresses. The owner needs to connect a verified email sender before customer codes can be delivered.');
       if (data.code === 'over_email_send_rate_limit') throw new Error(message || 'Please wait before requesting another email code.');
       throw new Error(message || 'Could not send a sign-in code. Try again shortly.');
+    }
+    return { status: 'otp_sent' };
+  }
+
+  async function resendSignupOtp(email) {
+    requireConfig();
+    const address = String(email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address used for registration.');
+    const response = await fetch(url + '/auth/v1/resend', {
+      method: 'POST',
+      headers: { apikey: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'signup', email: address }),
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data.msg || data.message || data.error_description || data.error;
+      if (data.code === 'over_email_send_rate_limit') throw new Error(message || 'Please wait before requesting another email code.');
+      throw new Error(message || 'Could not resend the signup code. Try again shortly.');
     }
     return { status: 'otp_sent' };
   }
@@ -456,6 +475,7 @@
   window.DeepCSCBackend = Object.freeze({
     auth,
     requestEmailOtp,
+    resendSignupOtp,
     verifyEmailOtp,
     initialize,
     getAccount: () => account,
