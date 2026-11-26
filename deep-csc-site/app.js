@@ -1,623 +1,1637 @@
-(() => {
-  const WA = '917986630948';
-  const OWNER_EMAILS = new Set(['sandeepharmen@gmail.com']);
-  const isOwnerEmail = email => OWNER_EMAILS.has(String(email || '').trim().toLowerCase());
-  // Auth belongs in the backend's HttpOnly cookie, never browser storage.
-  // Clear credential-like values left by older previews while preserving consent/favorites.
-  for (const storageName of ['localStorage', 'sessionStorage']) {
-    try {
-      const store = window[storageName];
-      const staleKeys = [];
-      for (let index = 0; index < store.length; index += 1) {
-        const key = store.key(index);
-        if (key && /(token|jwt|credential|auth|session)/i.test(key)) staleKeys.push(key);
-      }
-      for (const key of staleKeys) store.removeItem(key);
-    } catch {}
-  }
-  try { window.localStorage.removeItem('deepCSCApproved'); } catch {}
-  let accountCsrf = '';
-  let currentAccount = null;
-  const services = [
-    ['A','Aadhaar Services','Address/update guidance, card download and printing.'],
-    ['B','Birth Certificate','Application guidance and document preparation.'],
-    ['C','Caste Certificate','Checklist guidance and application support.'],
-    ['D','Driving Licence','Learner or driving licence application assistance.'],
-    ['E','E-Shram & Education','E-Shram, admission and scholarship forms.'],
-    ['F','Father Aadhaar Card','Upload a clear image or PDF of the father Aadhaar card.'],
-    ['F','Family ID & Ration Card','Family and ration card application support.'],
-    ['G','Government Job Forms','Recruitment forms, admit cards and printouts.'],
-    ['H','Health & Welfare Cards','Health scheme and welfare application guidance.'],
-    ['I','Income Certificate','Income certificate application guidance.'],
-    ['I','ITR Filing','Income tax return form assistance.'],
-    ['J','Jamabandi (Front / Back)','Upload clear photographs of both front and back pages.'],
-    ['K','KYC Assistance','KYC forms and supporting document preparation.'],
-    ['L','Land Records','Land record print and related application guidance.'],
-    ['M','Marriage Certificate','Application checklist and document preparation.'],
-    ['M','Mother Aadhaar Card','Upload a clear image or PDF of the mother Aadhaar card.'],
-    ['N','NOC & Corrections','NOC, name correction and form assistance.'],
-    ['O','Online Forms','Registrations, application forms and portal uploads.'],
-    ['P','PAN Card','PAN application guidance and document preparation.'],
-    ['P','Photo','Upload a clear recent applicant photo.'],
-    ['P','Passport','Passport appointment and document guidance.'],
-    ['Q','Quick Print & Scan','Document scanning, print and file preparation.'],
-    ['R','Resident Certificate','Residence and domicile application assistance.'],
-    ['S','Scholarship & Student','Scholarship, exam and student form support.'],
-    ['S','Signature','Upload a clear signature image or signed page.'],
-    ['T','Typing & Translation','Punjabi, Hindi and English typing support.'],
-    ['U','UDID Card','Disability ID card application guidance.'],
-    ['V','Voter Card','Voter card application, correction and print help.'],
-    ['W','Welfare Schemes','Government welfare form and eligibility guidance.'],
-    ['X','Xerox / Photocopy','Black and white or colour photocopy service.'],
-    ['Y','Youth Services','Youth registrations and student applications.'],
-    ['Z','Zip, Upload & File Help','File compression, scanning and digital uploads.'],
-    ['A','Aadhaar Address / Bank Update','Aadhaar address or bank detail update assistance.'],
-    ['A','Aadhaar PVC Card Order','Order an Aadhaar PVC card.'],
-    ['A','Aashirwad Scheme','Punjab welfare scheme application assistance.'],
-    ['A','Ayushman Bharat / Sehat Bima Card','Health scheme card application support.'],
-    ['A','ABHA Health Card','ABHA health account card assistance.'],
-    ['B','Budhapa Pension','Old age pension application assistance.'],
-    ['B','Birth / Death Certificate','Birth or death certificate application support.'],
-    ['D','DL Renewal / Address Change','Driving licence renewal or address change.'],
-    ['D','Divyang Pension','Disability pension application support.'],
-    ['E','E-Shram Card','E-Shram registration assistance.'],
-    ['E','Electricity / Water Bill Payment','Online utility bill payment assistance.'],
-    ['G','Government Job Forms (SSC / UPSC / PSSSB)','Recruitment applications for government jobs.'],
-    ['H','HSRP Number Plate','High Security Registration Plate booking assistance.'],
-    ['J','Jeevan Pramaan (Pension Life Certificate)','Digital life certificate assistance for pensioners.'],
-    ['L','Learning Driving Licence','Learner licence application assistance.'],
-    ['P','PM-Kisan Samman Nidhi Registration','PM-Kisan registration and correction assistance.'],
-    ['P','PM Vishwakarma / Toolkit Assistance','PM Vishwakarma registration assistance.'],
-    ['P','Permanent Driving Licence','Permanent driving licence application assistance.'],
-    ['P','Passport (36 Pages)','Regular 36-page passport application assistance.'],
-    ['P','Passport (Tatkal)','Tatkal passport application assistance.'],
-    ['P','PVC Smart Card Printing','PVC print for Aadhaar, Voter ID or RC.'],
-    ['R','Ration Card (New / Add Member / Correction)','Ration card application and correction support.'],
-    ['R','Rural / Border Area Certificate','Rural or border area certificate assistance.'],
-    ['S','School / College Admission & Scholarship','Admission and scholarship form assistance.'],
-    ['S','Sakhi / Ashirwad Scheme','Welfare scheme registration assistance.'],
-    ['V','Voter Card (New / Correction)','New Voter ID or correction assistance.'],
-    ['W','Widow Pension','Widow pension application support.'],
-  ];
-  // Values copied from the customer's handwritten rate notes. Ranges/unclear totals stay estimates.
-  const feeRows = [
-    {names:['PAN Card','PAN Card (New / Correction)'],government:'â‚¹107 (noted)',cafe:'â‚¹40â€“â‚¹100',total:'â‚¹200',certainty:'listed'},
-    {names:['Voter Card','Voter Card (New / Correction)'],government:'â‚¹0',cafe:'â‚¹30â€“â‚¹50',total:'â‚¹100',certainty:'listed'},
-    {names:['Aadhaar Address / Bank Update'],government:'â‚¹50',cafe:'â‚¹30â€“â‚¹50',total:'â‚¹150',certainty:'listed'},
-    {names:['Aadhaar PVC Card Order'],government:'â‚¹50',cafe:'â‚¹20â€“â‚¹50',total:'â‚¹100',certainty:'listed'},
-    {names:['Ayushman Bharat / Sehat Bima Card'],government:'â‚¹0',cafe:'â‚¹20â€“â‚¹30',total:'â‚¹80',certainty:'listed'},
-    {names:['E-Shram Card','ABHA Health Card'],government:'â‚¹0',cafe:'â‚¹20â€“â‚¹40',total:'â‚¹80',certainty:'listed'},
-    {names:['UDID Card'],government:'â‚¹0',cafe:'â‚¹30â€“â‚¹50',total:'â‚¹80',certainty:'listed'},
-    {names:['Passport (36 Pages)'],government:'â‚¹1,500',cafe:'â‚¹200â€“â‚¹300',total:'â‚¹1,700+',certainty:'estimate'},
-    {names:['Passport (Tatkal)'],government:'â‚¹3,500 (noted)',cafe:'â‚¹150â€“â‚¹200',total:'â‚¹3,650â€“â‚¹3,700',certainty:'estimate'},
-    {names:['Learning Driving Licence'],government:'â‚¹100â€“â‚¹200',cafe:'â‚¹100',total:'â‚¹300 (noted)',certainty:'estimate'},
-    {names:['Permanent Driving Licence'],government:'â‚¹700â€“â‚¹1,000',cafe:'â‚¹200',total:'Confirm after portal fee',certainty:'confirm'},
-    {names:['DL Renewal / Address Change'],government:'â‚¹700â€“â‚¹1,000',cafe:'â‚¹200',total:'Confirm after portal fee',certainty:'confirm'},
-    {names:['HSRP Number Plate'],government:'â‚¹400â€“â‚¹1,200',cafe:'â‚¹200â€“â‚¹300',total:'Confirm after portal fee',certainty:'confirm'},
-    {names:['Resident Certificate'],government:'â‚¹35â€“â‚¹85 (note unclear)',cafe:'â‚¹100',total:'â‚¹150â€“â‚¹200+',certainty:'estimate'},
-    {names:['Caste Certificate'],government:'â‚¹50â€“â‚¹75',cafe:'â‚¹100',total:'â‚¹150+',certainty:'estimate'},
-    {names:['Income Certificate'],government:'â‚¹55â€“â‚¹85',cafe:'â‚¹100',total:'â‚¹150+',certainty:'estimate'},
-    {names:['Rural / Border Area Certificate'],government:'â‚¹30â€“â‚¹100',cafe:'â‚¹100',total:'â‚¹150+',certainty:'estimate'},
-    {names:['Birth / Death Certificate','Birth Certificate'],government:'â‚¹20â€“â‚¹50',cafe:'â‚¹100',total:'â‚¹150',certainty:'listed'},
-    {names:['PM-Kisan Samman Nidhi Registration'],government:'â‚¹15',cafe:'â‚¹50',total:'â‚¹100',certainty:'listed'},
-    {names:['PM Vishwakarma / Toolkit Assistance'],government:'â‚¹0',cafe:'â‚¹50',total:'â‚¹50',certainty:'listed'},
-    {names:['Budhapa Pension'],government:'â‚¹0',cafe:'â‚¹50',total:'â‚¹50',certainty:'listed'},
-    {names:['Widow Pension','Divyang Pension'],government:'â‚¹0',cafe:'â‚¹50',total:'â‚¹50',certainty:'listed'},
-    {names:['Jeevan Pramaan (Pension Life Certificate)'],government:'â‚¹50 (unclear)',cafe:'â‚¹100',total:'â‚¹150',certainty:'estimate'},
-    {names:['Ration Card (New / Add Member / Correction)'],government:'â‚¹30â€“â‚¹60',cafe:'â‚¹100',total:'â‚¹150',certainty:'listed'},
-    {names:['Sakhi / Ashirwad Scheme','Aashirwad Scheme'],government:'â‚¹0',cafe:'â‚¹80',total:'â‚¹80',certainty:'listed'},
-    {names:['Government Job Forms','Government Job Forms (SSC / UPSC / PSSSB)'],government:'â‚¹50â€“â‚¹500',cafe:'â‚¹100â€“â‚¹200',total:'â‚¹200 (note unclear)',certainty:'estimate'},
-    {names:['School / College Admission & Scholarship','Scholarship & Student'],government:'Not clear in note',cafe:'Not clear in note',total:'Confirm before payment',certainty:'confirm'},
-    {names:['ITR Filing'],government:'â‚¹300â€“â‚¹1,000 (income slab)',cafe:'Not clear in note',total:'Confirm before payment',certainty:'confirm'},
-    {names:['Electricity / Water Bill Payment'],government:'â‚¹30â€“â‚¹50 (note unclear)',cafe:'Not clear in note',total:'Confirm before payment',certainty:'confirm'},
-    {names:['PVC Smart Card Printing'],government:'â‚¹30â€“â‚¹50',cafe:'â‚¹50',total:'â‚¹100',certainty:'listed'},
-  ];
-  const feeFor=(service)=>feeRows.find((row)=>row.names.includes(service));
-  const reqDoc = (name, status = 'Mandatory', upload = true, limits = {}) => ({name,status,upload,fileRequired:limits.fileRequired??(upload&&status==='Mandatory'),minBytes:limits.minKB?limits.minKB*1024:1,maxBytes:limits.maxKB?limits.maxKB*1024:10*1024*1024});
-  const requirementsFor = (service, variant = '') => {
-    const name=service.toLowerCase(),kind=variant.toLowerCase();
-    const official=(documents,source,sourceLabel,note='')=>({documents,source,sourceLabel,note,verified:true});
-    const conditional=(documents,source,sourceLabel,note)=>({documents,source,sourceLabel,note,verified:false});
-    if(name.includes('father aadhaar')||name.includes('mother aadhaar'))return conditional([reqDoc('Family memberâ€™s Aadhaar copy â€” only if that person agrees and this particular service needs it','Consent first'),reqDoc('Aadhaar-linked mobile OTP â€” entered at the official portal, never share the OTP here','Portal step',false)],'https://uidai.gov.in/en/updating-data-on-aadhaar','UIDAI update guidance','This is a customer request to handle a family memberâ€™s copy, not a government service requirement. Get the personâ€™s consent first; Aadhaar is sensitive personal information.');
-    if(name.includes('caste')){
-      if(kind.includes('general'))return official([reqDoc('Aadhaar / identity proof'),reqDoc('Two residence proofs (as listed on the Punjab General Caste form)'),reqDoc('Self-declaration'),reqDoc('Patwari and Nambardar / Sarpanch / MC report')],'https://punjab.gov.in/wp-content/uploads/2020/05/Issuance-of-Caste-Certificate-General.pdf','Punjab General Caste Certificate form','The form is older. Confirm the latest checklist in Connect Punjab before filing.');
-      if(kind.includes('bc')||kind.includes('obc'))return official([reqDoc('Residence proof â€” one accepted document'),reqDoc('Self-declaration'),reqDoc('Date-of-birth proof'),reqDoc('Identity proof'),reqDoc('Father / brother / sister caste certificate, if the relevant form answer is â€œYesâ€','Conditional')],'https://punjab.gov.in/wp-content/uploads/2023/05/Caste-Certificate-BC-OBC-v2.0-.pdf','Punjab BC/OBC Caste Certificate form','Verification report is listed as optional on this form.');
-      return official([reqDoc('Residence proof â€” one accepted document'),reqDoc('Self-declaration'),reqDoc('Date-of-birth proof'),reqDoc('Identity proof'),reqDoc('Father / brother / sister caste certificate, if applicable','Conditional')],'https://punjab.gov.in/wp-content/uploads/2025/09/Caste-certificaate-SC.pdf','Punjab SC Caste Certificate form','Select BC/OBC or General above if that is the applicant category.');
-    }
-    if(name.includes('income'))return official([reqDoc('One identity-cum-residence proof: Aadhaar, driving licence, passport, voter ID or government ID'),reqDoc('Self-declaration'),reqDoc('Verification report'),reqDoc('Income proof from all sources')],'https://eservices.punjab.gov.in/resources/homePage/3/sop/Income_about_service.html','Punjab eServices Income Certificate guide','The current eServices page lists income proof as mandatory. The applicantâ€™s income case determines which records are relevant.');
-    if(name.includes('resident')||name.includes('domicile')){const docs=[reqDoc('One accepted identity-cum-address proof'),reqDoc('Self-declaration and verification report from the authority specified on the Punjab form')];if(kind==='property')docs.push(reqDoc('Farad / sale deed for the Punjab immovable-property category'));else if(kind==='born')docs.push(reqDoc('Birthplace proof for the Punjab-born category'));else{docs.push(reqDoc('Farad / sale deed, if applying under the immovable-property category','Conditional'));docs.push(reqDoc('Birthplace proof, if applying under the Punjab-born category','Conditional'))}return official(docs,'https://punjab.gov.in/wp-content/uploads/2025/04/Residence-Certificate.pdf','Punjab Residence Certificate form','Category-specific proof applies only when that residence category is selected.');}
-    if(name.includes('border area')&&kind==='border')return conditional([reqDoc('Exact border-area certificate form and applicant eligibility basis','Confirm with Punjab Connect',false),reqDoc('Identity/address and local verification proof shown for the selected certificate','Case-dependent')],'https://connect.punjab.gov.in/','Punjab Connect portal','The Rural Area Certificate list is separate; do not reuse it as a border-area checklist. Confirm the Border Area form first.');
-    if(name.includes('rural')&&(!name.includes('border area')||kind==='rural'))return official([reqDoc('Beneficiary identity proof â€” one accepted item'),reqDoc('Beneficiary address proof â€” one accepted item'),reqDoc('Verification leaf by Sarpanch / Nambardar and Panchayat Secretary'),reqDoc('Self-attested live photo captured during submission','Portal step',false)],'https://punjab.gov.in/wp-content/uploads/2025/09/Rural-Area-Certificate-Service-Details.pdf','Punjab Rural Area Certificate service details','This list is verified for the Rural Area Certificate service.');
-    if(name.includes('border area'))return conditional([reqDoc('Choose Rural Area or Border Area Certificate to view its separate checklist','Choose application type',false)],'https://punjab.gov.in/forms/','Punjab government forms index','Punjab publishes separate certificate forms; do not reuse the Rural Area list as the Border Area checklist.');
-    if(name.includes('birth')||name.includes('death')){
-      const isDeath=kind.includes('death');
-      if(kind.includes('correction'))return official([reqDoc('Applicant identity-cum-residence proof'),reqDoc(`Existing ${isDeath?'death':'birth'} certificate`),reqDoc('Self-declaration explaining the correction'),reqDoc('Statements/reports from two credible witnesses'),reqDoc('Deceased / child identity or supporting record relevant to the correction','Conditional'),reqDoc('Police / post-mortem record for accidental, suicide or criminal death only','Conditional')],isDeath?'https://punjab.gov.in/wp-content/uploads/2020/05/Correction-in-Death-Certificate-v-2.0.pdf':'https://punjab.gov.in/wp-content/uploads/2020/05/Correction-in-Birth-Certificate-v-2.0.pdf',`Punjab ${isDeath?'Death':'Birth'} Certificate correction form`,'Birth and death corrections use separate forms. Ask the shop to confirm the correct registrar process before applying.');
-      if(kind.includes('registration'))return conditional([reqDoc(`Exact ${isDeath?'death':'birth'} late-registration form and local registrar / competent-authority order for the event delay`,'Required to identify this case',false),reqDoc(`${isDeath?'Death':'Birth'} event evidence requested by the local registrar`,'Case-dependent')],'https://punjab.gov.in/forms/','Punjab Health Department birth/death form index','Punjab publishes separate late-entry forms. The required order and proof depend on the event date and registrar decision; confirm that form before asking for scans.');
-      return official([reqDoc('Applicant identity-cum-residence proof'),reqDoc(`Existing ${isDeath?'death':'birth'} certificate, if requesting a copy and one is available`,'Conditional'),reqDoc(`${isDeath?'Deceased personâ€™s':'Childâ€™s'} event / identity record, if the registrar asks for it`,'Conditional'),reqDoc('Late-registration order / non-availability certificate, if the delay requires it','Conditional')],isDeath?'https://punjab.gov.in/wp-content/uploads/2020/05/Issuance-of-Copy-of-Death-Certificate-or-Non-Availability-Certificatev2.0.pdf':'https://punjab.gov.in/wp-content/uploads/2020/05/Issuance-of-Copy-of-Birth-Certificate-or-Non-Availability-Certificate-v-2.0.pdf','Punjab Birth / Death Copy and Non-Availability forms','New registration, a copy, late registration and correction are different processes. Select the right case and confirm with the local registrar.');
-    }
-    if(name.includes('marriage'))return official([reqDoc('Bride and groom identity proof'),reqDoc('Bride and groom address proof'),reqDoc('Bride and groom date-of-birth proof'),reqDoc('Marriage venue certificate OR Gurudwara certificate for Anand Marriage registration'),reqDoc('Wedding card and wedding photographs'),reqDoc('Identity proof of two witnesses from the groomâ€™s side'),reqDoc('Identity proof of two witnesses from the brideâ€™s side'),reqDoc('Divorce decree / former spouse death certificate, if applicable','Conditional'),reqDoc('Passport for an NRI applicant, if applicable','Conditional')],'https://punjab.gov.in/wp-content/uploads/2023/02/Marriage-Registration-.pdf','Punjab Marriage Registration form','The Punjab form says scans should be made from original documents. The marriage-law route affects which venue certificate is accepted.');
-    if(name.includes('aadhaar pvc'))return official([reqDoc('Aadhaar number and access to the registered mobile for OTP','Portal step',false)],'https://uidai.gov.in/en/my-aadhaar/get-aadhaar.html','UIDAI Aadhaar services','UIDAI PVC order uses Aadhaar details and portal verification; do not upload an Aadhaar copy here unless the customer expressly chooses to share it.');
-    if(name.includes('aadhaar')&&kind==='bank')return conditional([reqDoc('Receiving bankâ€™s Aadhaar-seeding / KYC request','Required to identify this request',false),reqDoc('Only the proofs the bank asks for','Bank-specific',false)],'https://www.rbi.org.in/','RBI customer KYC guidance','Bank account seeding is a bank / NPCI process, not an Aadhaar demographic update. Use the customerâ€™s own bank channel; never request a PIN, password or OTP.');
-    if(name.includes('aadhaar'))return official([reqDoc('One proof accepted for the field being changed (identity, address, date of birth or relationship proof)','Choose according to update'),reqDoc('Existing Aadhaar details and Aadhaar-linked mobile for OTP, if the official flow uses OTP','Portal step',false)],'https://uidai.gov.in/images/commdoc/List_of_Supporting_Document_for_Aadhaar_Enrolment_and_Update.pdf','UIDAI accepted supporting-document list','There is no single document for every Aadhaar change. Bank-account seeding is a separate bank / NPCI process, not an Aadhaar update; its rules depend on the bank.');
-    if(name.includes('voter')){
-      if(kind==='shift')return official([reqDoc('Proof of new ordinary residence'),reqDoc('Existing EPIC / voter details'),reqDoc('Aadhaar number if available; the form permits indicating that Aadhaar is not available','Conditional',false)],'https://voters.eci.gov.in/guidelines/Form-8_en.pdf','Election Commission Form 8 guidelines','For shifting residence, submit the Form 8 address-shift section and proof of the new address.');
-      if(kind==='replacement')return official([reqDoc('Existing EPIC / voter details'),reqDoc('Old EPIC to return, if damaged; police report / FIR if lost, as applicable')],'https://voters.eci.gov.in/guidelines/Form-8_en.pdf','Election Commission Form 8 guidelines','Replacement proof depends on whether the old EPIC is damaged or lost.');
-      if(kind==='photo')return official([reqDoc('Recent passport-size colour photo for the photo-change request'),reqDoc('Existing EPIC / voter details')],'https://voters.eci.gov.in/guidelines/Form-8_en.pdf','Election Commission Form 8 guidelines','Use Form 8 for the correction/update request and upload only the changed-field proof the form asks for.');
-      if(kind==='correction')return official([reqDoc('Proof supporting the exact corrected voter entry'),reqDoc('Existing EPIC / voter details'),reqDoc('Aadhaar number if available; the form permits indicating that Aadhaar is not available','Conditional',false)],'https://voters.eci.gov.in/guidelines/Form-8_en.pdf','Election Commission Form 8 guidelines','Only attach proof relevant to the selected corrected entry.');
-      return official([reqDoc('Recent passport-size colour photo with white background'),reqDoc('One accepted age proof, for applicants in the age-proof category','Conditional'),reqDoc('One accepted proof of ordinary residence'),reqDoc('Aadhaar number if available; the form permits indicating that Aadhaar is not available','Conditional',false)],'https://voters.eci.gov.in/guidelines/Form-6_en.pdf','Election Commission Form 6 guidelines','For a correction/address shift, choose a Form 8 option above. Aadhaar is not universally mandatory.');
-    }
-    if(name.includes('passport'))return conditional([reqDoc('Passport Seva Document Advisor result for this applicantâ€™s fresh / reissue, age, Tatkaal and Non-ECR category','Choose case first',false),reqDoc('Proofs listed by the official advisor (identity/address/date of birth as applicable)','Case-dependent'),reqDoc('Old passport, for reissue, plus the documents requested for the specific change','Conditional')],'https://services2.passportindia.gov.in/psp/ListDocuments','Passport Seva official document list','The official checklist changes with fresh/reissue, age, Tatkaal and other personal circumstances. Use the Document Advisor before collecting scans.');
-    if(name==='driving licence'&&kind==='learner'||name.includes('learning driving'))return official([reqDoc('One accepted proof of age and address (one document may cover both)'),reqDoc('Form 1 physical-fitness self-declaration'),reqDoc('Photograph for the online form'),reqDoc('Parent / guardian declaration, if applicant is a minor','Conditional'),reqDoc('Driving-school Form 5, if the selected class/process asks for it','Conditional'),reqDoc('Form 1A only where the class/process requires a medical certificate','Conditional')],'https://mparivahan.parivahan.gov.in/docs/Form-2.pdf','Parivahan Form 2 document list','The official form lists accepted age/address proofs and marks other enclosures as applicable. The Sarathi portal decides the exact items for the vehicle class.');
-    if(name==='driving licence'&&kind==='permanent'||name.includes('permanent driving'))return official([reqDoc('Valid learnerâ€™s licence'),reqDoc('Form 2 application and driving-test details'),reqDoc('Photograph for the online form'),reqDoc('Form 1 fitness declaration / Form 1A medical certificate where the class or age requires it','Conditional')],'https://mparivahan.parivahan.gov.in/docs/Form-2.pdf','Parivahan Form 2 document list','The licensing portal may require a test booking and additional enclosures based on vehicle class.');
-    if(name==='driving licence'&&kind==='address')return official([reqDoc('Existing driving licence'),reqDoc('Form 2 change-of-address application'),reqDoc('Proof of new address'),reqDoc('Photograph, if the Sarathi portal asks for one','Conditional')],'https://mparivahan.parivahan.gov.in/docs/Form-2.pdf','Parivahan Form 2 document list','The live Sarathi portal decides whether any additional proof is needed for this state and application.');
-    if(name.includes('dl renewal')||name.includes('driving licence')){const docs=[reqDoc('Existing driving licence'),reqDoc('Form 2 renewal / change application'),reqDoc('Photograph for the online form')];if(kind!=='address')docs.push(reqDoc('Form 1 physical-fitness self-declaration','For renewal'));if(kind!=='address')docs.push(reqDoc('Form 1A medical certificate for applicants over 40 or transport vehicles','Conditional'));if(kind==='address'||kind==='both')docs.push(reqDoc('Proof of new address','Conditional'));return official(docs,'https://mparivahan.parivahan.gov.in/mstatic/english/dl-info-renewal-dl.html','Parivahan renewal guidance','Renewal and address change are separate selections; additional documents depend on licence class and applicant age.');}
-    if(name.includes('hsrp'))return conditional([reqDoc('Vehicle registration number and RC details','Needed to identify the vehicle'),reqDoc('Chassis / engine details only if requested by the authorized plate booking portal','Portal-dependent'),reqDoc('Existing plate / police report if replacing a lost or damaged plate','Conditional')],'https://www.punjabtransport.org/','Punjab Transport Department','Requirements and payment are set by the authorized HSRP booking provider for the vehicle. Confirm the official booking route before taking payment.');
-    if(name.includes('ration')||name.includes('family id')){const docs=[reqDoc('Family membersâ€™ names, ages and household address','Portal details',false)];if(kind==='new'){docs.push(reqDoc('Surrender / deletion certificate for an old ration card, if the applicant has one','Older charter; verify',true));docs.push(reqDoc('Two family photographs, as stated in the 2019 citizen charter','Older charter; verify',true))}else if(kind==='member')docs.push(reqDoc('Marriage / birth / death / transfer record relevant to the member change','Case-dependent'));else if(kind==='correction')docs.push(reqDoc('Address proof for an address-change request','Case-dependent'));else{docs.push(reqDoc('Surrender / deletion certificate for an old card in some new-card cases','Older charter; verify',true));docs.push(reqDoc('Family photographs / member-change proof where the live portal asks for them','Case-dependent',true))}return conditional(docs,'https://punjab.gov.in/wp-content/uploads/2019/04/Modal-Citizen-Chartar-1.pdf','Punjab ration-card citizen charter (2019)','The published charter is dated 2019. Confirm todayâ€™s Punjab Food & Supplies portal checklist before collecting or charging for any item.');}
-    if(name.includes('itr'))return conditional([reqDoc('PAN and access to the income-tax e-filing account','Portal details',false),reqDoc('Form 16 / 16A, AIS and Form 26AS, as applicable','Useful for preparing return'),reqDoc('Bank statements / interest certificates relevant to income','Useful for preparing return'),reqDoc('Rent, investment, donation or deduction proofs only if claiming them','Conditional'),reqDoc('Capital-gain or business records if that income type applies','Conditional')],'https://www.incometax.gov.in/iec/foportal/help/all-topics/e-filing-services/ITR1-FAQ','Income Tax Department ITR-1 FAQ','Exact records depend on the correct ITR form and income sources. These are working records; ITRs are annexure-less and generally do not require uploading these proofs with the return.');
-    if(name.includes('job form')||name.includes('recruitment'))return conditional([reqDoc('Exact recruitment advertisement / post notice and number','Required to identify this application'),reqDoc('Only the certificates and photo/signature formats named in that specific notice','Post-specific')],'https://punjab.gov.in/impnotifications/','Punjab government notifications','There is no universal government-job document list. The recruitment notification is needed before a correct upload checklist can be shown.');
-    if(name.includes('pm vishwakarma'))return official([reqDoc('Aadhaar number and Aadhaar-linked OTP / biometric verification at the CSC','Portal step',false),reqDoc('Bank account details; a bank account is required for benefits','Portal details',false),reqDoc('No document upload is required on the PM Vishwakarma portal','No upload',false)],'https://champions.gov.in/Ministry-of-MSME/skills%2Cloan%2Ccredit_guarantee%2CPM-atmnirbhar-Economic-Package%2Celigibility_criteria%2Cguidelines_Schemes/query_questions_FAQs.htm','Ministry of MSME PM Vishwakarma FAQ','Do not upload Aadhaar/bank scans to this website for this registration. The artisan must meet the scheme trade and verification conditions.');
-    if(name.includes('e-shram'))return official([reqDoc('Aadhaar number and Aadhaar-linked mobile OTP; biometric CSC enrolment if that mobile is not linked','Portal step',false),reqDoc('No file upload is normally listed in the official worker registration steps','No upload',false)],'https://eshram.gov.in/faqs','e-Shram official FAQ','Use the official portal/CSC flow; never ask the customer to send an Aadhaar OTP in a WhatsApp message.');
-    if(name.includes('abha'))return official([reqDoc('Aadhaar number and mobile OTP OR another supported identity-verification route','Portal step',false),reqDoc('No document is needed for instant Aadhaar-based ABHA creation','No upload',false)],'https://abdm.gov.in/strapicms/uploads/ABHA_POCKET_SIZE_final_62e3dbc0fc.pdf','ABDM ABHA brochure','ABHA creation is voluntary. Do not upload Aadhaar to this request form just to create an ABHA number.');
-    if(name.includes('udid'))return official([reqDoc('Applicant colour photograph','Mandatory',true,{minKB:15,maxKB:100}),reqDoc('Applicant signature image','Mandatory',true,{minKB:3,maxKB:30}),reqDoc('Address proof','Mandatory',true,{minKB:10,maxKB:500}),reqDoc('Disability certificate, if already issued; otherwise follow the official assessment workflow','Conditional',true,{minKB:10,maxKB:500}),reqDoc('Aadhaar details for portal verification','Portal step',false)],'https://swavlambancard.gov.in/faqs','UDID official FAQ','The official FAQ lists 15â€“100 KB for a photo, 3â€“30 KB for a signature and 10â€“500 KB for address/disability proof. Address proof may not be needed separately when the Aadhaar address is the same.');
-    if(name.includes('jeevan pramaan'))return official([reqDoc('Pensioner Aadhaar number / VID and biometric authentication','Portal step',false),reqDoc('PPO number'),reqDoc('Pension account / bank and pension authority details','Portal details',false),reqDoc('Aadhaar-registered mobile number for updates','Portal details',false)],'https://jeevanpramaan.gov.in/v2.0/misc/faq','Jeevan Pramaan official FAQ','The pensioner provides pension-related details during generation; this is not a generic document-upload checklist.');
-    if(name.includes('pm-kisan'))return official([reqDoc('Aadhaar details for identity authentication','Portal step',false),reqDoc('Bank account number and IFSC','Portal details',false),reqDoc('Landholding / state land record details for eligibility','Portal details',false)],'https://pmkisan.gov.in/Documents/FAQPMKISAN.pdf','PM-Kisan official FAQ','Eligibility and identity routes can vary under scheme rules. Use the official registration portalâ€™s prompts; do not request bank credentials or OTPs.');
-    if(name.includes('pension')){
-      const isWidow=name.includes('widow'),isDisabled=name.includes('divyang');
-      const docs=[reqDoc('Identity proof'),reqDoc('Address proof'),reqDoc('Date-of-birth proof'),reqDoc('Bank passbook / account proof')];
-      if(isWidow)docs.push(reqDoc('Husbandâ€™s death certificate'),reqDoc('Divorce / court or panchayat record, if applying as divorced destitute','Conditional'));
-      if(isDisabled)docs.push(reqDoc('UDID / disability proof'));
-      return official(docs,isWidow?'https://punjab.gov.in/wp-content/uploads/2025/09/Widow-Destitute-pension-scheme.pdf':isDisabled?'https://punjab.gov.in/wp-content/uploads/2025/09/Disabled-Person-Pension-scheme.pdf':'https://punjab.gov.in/wp-content/uploads/2025/09/Old-Age-Pension-Scheme.pdf','Punjab 2025 pension service form','The pension category and applicant situation decide whether an extra document is needed.');
-    }
-    if(name.includes('aashirwad')||name.includes('sakhi'))return conditional([reqDoc('Applicant / girlâ€™s date-of-birth proof'),reqDoc('Applicant and family residence details'),reqDoc('Current income / eligibility proof required by the live scheme portal'),reqDoc('Category / widow / divorce proof only where the eligibility route requires it','Conditional'),reqDoc('Village Sarpanch or municipal verification where the live form requests it','Conditional')],'https://punjab.gov.in/aashirwad-scheme/','Punjab Aashirwad Scheme page','The accessible detailed Punjab form is old. Confirm the current scheme checklist and eligibility on Connect Punjab before asking for uploads.');
-    if(name.includes('ayushman')||name.includes('health & welfare'))return conditional([reqDoc('Check household eligibility on the official Ayushman / Punjab health portal','Portal step',false),reqDoc('Beneficiary identity details requested by the official portal','Portal details',false),reqDoc('No fixed upload list until the eligible scheme and portal route are confirmed','Case-dependent',false)],'https://beneficiary.nha.gov.in/','National Health Authority beneficiary portal','Eligibility and verification method differ by scheme and beneficiary. Do not promise a card based only on an Aadhaar upload.');
-    if(name.includes('pan card')){if(kind==='instant')return official([reqDoc('Valid Aadhaar with current KYC and Aadhaar-linked mobile OTP','Portal step',false),reqDoc('Applicant must never have been allotted a PAN and must meet Instant e-PAN eligibility','Eligibility',false),reqDoc('No document upload is required in the Instant e-PAN flow','No upload',false)],'https://www.incometax.gov.in/iec/foportal/help/e-filing-generate-instant-e-pan-faq','Income Tax Department Instant e-PAN FAQ','The instant e-PAN process is free and is only for eligible applicants who have never been allotted a PAN. Physical PAN, correction and reprint use a different application route.');return conditional([reqDoc('Exact physical PAN / correction / reprint application type and its current prescribed proof list','Choose case first',false)],'https://www.protean-tinpan.com/services/pan/pan-index.html','Protean PAN application and document guidance','PAN application forms changed from 1 April 2026. Confirm the current form (93/94 or PAN-CR, as relevant) and its proof list; do not reuse an old Form 49A checklist.');}
-    if(name.includes('scholarship')||name.includes('admission')||name.includes('student'))return conditional([reqDoc('Exact school / college / scholarship notice or scheme name','Required to identify this application'),reqDoc('Only the records named by that institution / scheme notice','Case-dependent')],'https://punjab.gov.in/forms/','Punjab government forms and scheme index','Admission and scholarship requirements differ by institution, course, year and scheme.');
-    if(name.includes('jamabandi')||name.includes('land records'))return conditional([reqDoc('Owner name, village, tehsil, khasra / khatauni or jamabandi reference','Portal details',false),reqDoc('Jamabandi / land-record page requested by the customer','Customer-provided copy')],'https://jamabandi.punjab.gov.in/','Punjab Land Records portal','A record copy lookup is different from a mutation or ownership-change application. Exact proofs depend on the transaction.');
-    if(name==='photo')return conditional([reqDoc('Recent photo in the format and dimensions required by the selected application')],'https://connect.punjab.gov.in/','Punjab Connect portal','Photo dimensions and background depend on the selected form.');
-    if(name==='signature')return conditional([reqDoc('Signature image in the size and format required by the selected application')],'https://connect.punjab.gov.in/','Punjab Connect portal','Do not upload a signature unless it is needed for the chosen form.');
-    if(name.includes('print')||name.includes('photocopy')||name.includes('xerox')||name.includes('zip')||name.includes('file help')||name.includes('typing')||name.includes('translation'))return conditional([reqDoc('The exact original document or source file to scan, type, translate or print')],'https://punjab.gov.in/','Punjab government portal','This is a shop service, not a government application checklist.');
-    if(name.includes('kyc'))return conditional([reqDoc('The receiving bank / institutionâ€™s own KYC request or form','Required to identify this request'),reqDoc('Only proofs requested by that institution','Case-dependent')],'https://www.rbi.org.in/','RBI customer KYC guidance','KYC document rules depend on the institution and customer type. Do not send OTP, PIN or passwords.');
-    if(name.includes('electricity')||name.includes('water bill'))return conditional([reqDoc('Latest bill or consumer / account number'),reqDoc('Registered mobile OTP, if the official provider requests it','Portal step',false)],'https://connect.punjab.gov.in/','Punjab Connect portal','Utility provider, account and payment options determine the exact process.');
-    if(name.includes('job form')||name.includes('recruitment')||name.includes('job application'))return conditional([reqDoc('Exact job / post advertisement or notification','Required to identify this application'),reqDoc('Only documents specified in that particular notification','Post-specific')],'https://punjab.gov.in/impnotifications/','Punjab government notifications','No single document list applies to all recruitment forms.');
-    if(name.includes('scholarship')||name.includes('admission')||name.includes('student'))return conditional([reqDoc('Exact admission notice or named scholarship scheme','Required to identify this application'),reqDoc('Only documents specified by that institution / scheme','Case-dependent')],'https://punjab.gov.in/forms/','Punjab government forms and scheme index','Eligibility and upload rules change by course, institution, scheme and year.');
-    if(name.includes('welfare')||name.includes('health'))return conditional([reqDoc('Exact scheme name and official scheme portal / notice','Required to identify this application'),reqDoc('Only proofs shown on that schemeâ€™s current portal','Case-dependent')],'https://punjab.gov.in/forms/','Punjab government forms and scheme index','Welfare services do not share one universal document checklist.');
-    if(name.includes('noc')||name.includes('correction'))return conditional([reqDoc('Exact department, form name and correction / NOC purpose','Required to identify this application'),reqDoc('Existing record and proof of requested change, if the official form asks for them','Case-dependent')],'https://punjab.gov.in/forms/','Punjab government forms and scheme index','Different NOCs and corrections have different authorities and document rules.');
-    return conditional([reqDoc('Exact government form / scheme name, department and application notice','Required to identify this application'),reqDoc('The official portalâ€™s document list for that exact form','Case-dependent')],'https://punjab.gov.in/forms/','Punjab government forms index','A safe required-document list cannot be shown until the exact form, scheme or portal route is identified.');
-  };
-  const requirementVariantOptions = (service) => {
-    const name=service.toLowerCase();
-    if(name.includes('caste'))return [['sc','Scheduled Caste (SC)'],['bc-obc','BC / OBC'],['general','General caste']];
-    if(name.includes('resident')||name.includes('domicile'))return [['standard','Standard Punjab residence case'],['property','Punjab property / land basis'],['born','Born in Punjab basis']];
-    if(name.includes('rural')&&name.includes('border area'))return [['rural','Rural Area Certificate'],['border','Border Area Certificate']];
-    if(name==='driving licence')return [['learner','Learner licence'],['permanent','Permanent licence'],['renewal','Renewal'],['address','Address change']];
-    if(name.includes('dl renewal'))return [['renewal','Licence renewal'],['address','Address change'],['both','Renewal and address change']];
-    if(name.includes('birth')&&name.includes('death'))return [['birth-copy','Birth certificate copy'],['birth-registration','Birth registration / late registration'],['birth-correction','Correction in a birth certificate'],['death-copy','Death certificate copy'],['death-registration','Death registration / late registration'],['death-correction','Correction in a death certificate']];
-    if(name.includes('birth'))return [['birth-copy','Birth certificate copy'],['birth-registration','Birth registration / late registration'],['birth-correction','Correction in a birth certificate']];
-    if(name.includes('death'))return [['death-copy','Death certificate copy'],['death-registration','Death registration / late registration'],['death-correction','Correction in a death certificate']];
-    if(name.includes('voter'))return [['new','New voter registration (Form 6)'],['correction','Correct voter details (Form 8)'],['shift','Shift address (Form 8)'],['replacement','Replacement EPIC (Form 8)'],['photo','Change photo (Form 8)']];
-    if(name.includes('ration'))return [['new','New ration card'],['member','Add / delete a family member'],['correction','Address / other correction']];
-    if(name.includes('passport'))return [['fresh','Fresh passport'],['reissue','Reissue / renewal']];
-    if(name.includes('aadhaar')&&!name.includes('pvc')){const options=[['address','Address update'],['name','Name / date-of-birth update'],['other','Other Aadhaar update']];if(name.includes('bank'))options.push(['bank','Bank account Aadhaar seeding']);return options;}
-    if(name.includes('pan card'))return [['physical','Physical PAN / correction / reprint'],['instant','Instant e-PAN (eligible new PAN only)']];
-    return [];
-  };
-  const tr = {
-    en:{corner:'What do you need help with?',docs:'Find the service you need.',apply:'Apply for a service',track:'Track application',complaint:'Register a complaint',verify:'Certificate verification',reapply:'Apply again',download:'Download / print',search:'Search any service: Aadhaar, PAN, voter cardâ€¦',booking:'Punjab CSC can come to you.',applyButton:'Checklist & apply'},
-    pa:{corner:'à¨¤à©à¨¹à¨¾à¨¨à©‚à©° à¨•à¨¿à¨¸ à¨•à©°à¨® à¨µà¨¿à©±à¨š à¨®à¨¦à¨¦ à¨šà¨¾à¨¹à©€à¨¦à©€ à¨¹à©ˆ?',docs:'à¨†à¨ªà¨£à©€ à¨¸à©‡à¨µà¨¾ à¨²à©±à¨­à©‹à¥¤',apply:'à¨¸à©‡à¨µà¨¾ à¨²à¨ˆ à¨…à¨°à¨œà¨¼à©€',track:'à¨…à¨°à¨œà¨¼à©€ à¨¦à©€ à¨¸à¨¥à¨¿à¨¤à©€',complaint:'à¨¸à¨¼à¨¿à¨•à¨¾à¨‡à¨¤ à¨¦à¨°à¨œ à¨•à¨°à©‹',verify:'à¨¸à¨°à¨Ÿà©€à¨«à¨¿à¨•à©‡à¨Ÿ à¨¦à©€ à¨œà¨¾à¨‚à¨š',reapply:'à¨¦à©à¨¬à¨¾à¨°à¨¾ à¨…à¨°à¨œà¨¼à©€',download:'à¨¡à¨¾à¨Šà¨¨à¨²à©‹à¨¡ / à¨ªà©à¨°à¨¿à©°à¨Ÿ',search:'à¨•à©‹à¨ˆ à¨µà©€ à¨¸à©‡à¨µà¨¾ à¨²à©±à¨­à©‹: à¨†à¨§à¨¾à¨°, à¨ªà©ˆà¨¨, à¨µà©‹à¨Ÿà¨° à¨•à¨¾à¨°à¨¡â€¦',booking:'Punjab CSC à¨¤à©à¨¹à¨¾à¨¡à©‡ à¨˜à¨° à¨† à¨¸à¨•à¨¦à¨¾ à¨¹à©ˆà¥¤',applyButton:'à¨¸à©‚à¨šà©€ à¨¤à©‡ à¨…à¨°à¨œà¨¼à©€'},
-    hi:{corner:'à¤†à¤ªà¤•à¥‹ à¤•à¤¿à¤¸ à¤•à¤¾à¤® à¤®à¥‡à¤‚ à¤®à¤¦à¤¦ à¤šà¤¾à¤¹à¤¿à¤?',docs:'à¤…à¤ªà¤¨à¥€ à¤¸à¥‡à¤µà¤¾ à¤–à¥‹à¤œà¥‡à¤‚à¥¤',apply:'à¤¸à¥‡à¤µà¤¾ à¤•à¥‡ à¤²à¤¿à¤ à¤†à¤µà¥‡à¤¦à¤¨',track:'à¤†à¤µà¥‡à¤¦à¤¨ à¤•à¥€ à¤¸à¥à¤¥à¤¿à¤¤à¤¿',complaint:'à¤¶à¤¿à¤•à¤¾à¤¯à¤¤ à¤¦à¤°à¥à¤œ à¤•à¤°à¥‡à¤‚',verify:'à¤ªà¥à¤°à¤®à¤¾à¤£à¤ªà¤¤à¥à¤° à¤¸à¤¤à¥à¤¯à¤¾à¤ªà¤¨',reapply:'à¤¦à¥‹à¤¬à¤¾à¤°à¤¾ à¤†à¤µà¥‡à¤¦à¤¨',download:'à¤¡à¤¾à¤‰à¤¨à¤²à¥‹à¤¡ / à¤ªà¥à¤°à¤¿à¤‚à¤Ÿ',search:'à¤•à¥‹à¤ˆ à¤­à¥€ à¤¸à¥‡à¤µà¤¾ à¤–à¥‹à¤œà¥‡à¤‚: à¤†à¤§à¤¾à¤°, à¤ªà¥ˆà¤¨, à¤µà¥‹à¤Ÿà¤° à¤•à¤¾à¤°à¥à¤¡â€¦',booking:'Punjab CSC à¤†à¤ªà¤•à¥‡ à¤˜à¤° à¤† à¤¸à¤•à¤¤à¤¾ à¤¹à¥ˆà¥¤',applyButton:'à¤¸à¥‚à¤šà¥€ à¤”à¤° à¤†à¤µà¥‡à¤¦à¤¨'},
-  };
-  document.addEventListener('DOMContentLoaded', () => {
-    const modal=document.querySelector('#modal'),body=document.querySelector('#modal-content');
-    const toast=document.createElement('div');toast.className='toast';toast.setAttribute('role','status');document.body.append(toast);let toastTimer;
-    const notify=(message)=>{toast.textContent=message;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2600)};
-    const htmlEscape=(value)=>String(value).replace(/[&<>"']/g,(character)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
-    const isSupportedDocument=async(file,minBytes=1,maxBytes=10*1024*1024)=>{
-      if(!file||file.size<minBytes||file.size>maxBytes)return false;
-      const name=file.name.toLowerCase(),bytes=new Uint8Array(await file.slice(0,1024).arrayBuffer());
-      if(name.endsWith('.pdf'))return String.fromCharCode(...bytes).includes('%PDF-');
-      if(name.endsWith('.jpg')||name.endsWith('.jpeg'))return bytes.length>=3&&bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff;
-      if(name.endsWith('.png'))return bytes.length>=8&&bytes[0]===0x89&&bytes[1]===0x50&&bytes[2]===0x4e&&bytes[3]===0x47&&bytes[4]===0x0d&&bytes[5]===0x0a&&bytes[6]===0x1a&&bytes[7]===0x0a;
-      return false;
-    };
-    const cookieBanner=document.querySelector('#cookie-banner'),cookieChoice=()=>{try{return localStorage.getItem('deep-cookie-choice')}catch{return null}};
-    const loadOptionalFonts=()=>{if(document.querySelector('#optional-google-fonts'))return;const link=document.createElement('link');link.id='optional-google-fonts';link.rel='stylesheet';link.href='https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap';document.head.append(link)};
-    const saveCookieChoice=(choice)=>{try{localStorage.setItem('deep-cookie-choice',choice)}catch{}cookieBanner.hidden=true;if(choice==='accepted')loadOptionalFonts()};
-    const existingCookieChoice=cookieChoice();if(existingCookieChoice==='accepted')loadOptionalFonts();else if(!existingCookieChoice)cookieBanner.hidden=false;
-    document.querySelector('#accept-cookies').onclick=()=>saveCookieChoice('accepted');
-    document.querySelector('#reject-cookies').onclick=()=>saveCookieChoice('rejected');
-    document.querySelector('#cookie-settings').onclick=()=>{cookieBanner.hidden=false};
-    const whatsapp=(message)=>window.open(`https://wa.me/${WA}?text=${encodeURIComponent(message)}`,'_blank','noopener,noreferrer');
-    async function loadOffers(){const target=document.querySelector('#active-offer');if(!target)return;try{const offers=await window.DeepCSCBackend.listPublicOffers(),offer=offers?.[0];if(!offer)return;const inner=document.createElement('div');inner.className='offer-banner-inner';const copy=document.createElement('div');copy.className='offer-banner-copy';const kicker=document.createElement('span');kicker.className='offer-banner-kicker';kicker.textContent='SEASONAL PUNJAB CSC OFFER';const title=document.createElement('h2');title.textContent=offer.title;const description=document.createElement('p');description.textContent=offer.message;copy.append(kicker,title,description);inner.append(copy);if(offer.button_label){const action=document.createElement('a');action.href=`https://wa.me/${WA}?text=${encodeURIComponent(`I would like details about: ${offer.title}`)}`;action.target='_blank';action.rel='noopener noreferrer';action.textContent=offer.button_label;inner.append(action)}target.replaceChildren(inner);target.hidden=false}catch{target.hidden=true}};
-    const open=(html)=>{modal.classList.remove('auth-dialog','owner-dialog','otp-dialog','checkout-dialog');body.innerHTML=html;if(!modal.open)modal.showModal()};
-    document.querySelector('.modal-close').addEventListener('click',()=>modal.close());
-    modal.addEventListener('click',(event)=>{if(event.target===modal)modal.close()});
-    const mobileMenu=document.querySelector('#mobile-menu'),mainNav=document.querySelector('#main-nav');
-    mobileMenu.onclick=()=>{const expanded=mobileMenu.getAttribute('aria-expanded')==='true';mobileMenu.setAttribute('aria-expanded',String(!expanded));mainNav.classList.toggle('is-open',!expanded)};
-    mainNav.querySelectorAll('a').forEach((link)=>link.onclick=()=>{mainNav.classList.remove('is-open');mobileMenu.setAttribute('aria-expanded','false')});
-
-    const grid=document.querySelector('#document-grid'),letters=document.querySelector('#letters');let currentLanguage='en',activeLetter='',serviceQuery='';
-    const serviceSearch=document.querySelector('#service-search'),searchFeedback=document.querySelector('#service-search-feedback');
-    const searchCopy={en:{found:(count)=>`${count} service${count===1?'':'s'} found.`,none:'No matching service found. Try another search.',letter:(count,letter)=>`${count} service${count===1?'':'s'} under ${letter}.`},pa:{found:(count)=>`${count} à¨¸à©‡à¨µà¨¾à¨µà¨¾à¨‚ à¨®à¨¿à¨²à©€à¨†à¨‚à¥¤`,none:'à¨•à©‹à¨ˆ à¨®à¨¿à¨²à¨¦à©€ à¨¸à©‡à¨µà¨¾ à¨¨à¨¹à©€à¨‚ à¨²à©±à¨­à©€à¥¤ à¨¹à©‹à¨° à¨¸à¨¼à¨¬à¨¦ à¨¨à¨¾à¨² à¨–à©‹à¨œà©‹à¥¤',letter:(count,letter)=>`${letter} à¨¹à©‡à¨  ${count} à¨¸à©‡à¨µà¨¾à¨µà¨¾à¨‚ à¨¦à¨¿à¨–à¨¾à¨ˆà¨†à¨‚ à¨œà¨¾ à¨°à¨¹à©€à¨†à¨‚ à¨¹à¨¨à¥¤`},hi:{found:(count)=>`${count} à¤¸à¥‡à¤µà¤¾à¤à¤ à¤®à¤¿à¤²à¥€à¤‚à¥¤`,none:'à¤•à¥‹à¤ˆ à¤®à¤¿à¤²à¤¤à¥€ à¤¸à¥‡à¤µà¤¾ à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¥€à¥¤ à¤¦à¥‚à¤¸à¤°à¤¾ à¤¶à¤¬à¥à¤¦ à¤–à¥‹à¤œà¥‡à¤‚à¥¤',letter:(count,letter)=>`${letter} à¤•à¥‡ à¤…à¤‚à¤¤à¤°à¥à¤—à¤¤ ${count} à¤¸à¥‡à¤µà¤¾à¤à¤ à¤¦à¤¿à¤–à¤¾à¤ˆ à¤œà¤¾ à¤°à¤¹à¥€ à¤¹à¥ˆà¤‚à¥¤`}};
-    const favoriteIsSaved=(name)=>{try{return localStorage.getItem(`deep-fav-${name}`)==='1'}catch{return false}};
-    const saveFavorite=(name,saved)=>{try{localStorage.setItem(`deep-fav-${name}`,saved?'1':'0')}catch{}};
-    const draw=()=>{
-      const query=serviceQuery.normalize('NFKC').toLocaleLowerCase();
-      const found=services.filter(([key,name,description])=>(!activeLetter||key===activeLetter)&&(!query||`${key} ${name} ${description}`.normalize('NFKC').toLocaleLowerCase().includes(query))).sort((a,b)=>a[1].localeCompare(b[1]));
-      grid.replaceChildren();
-      const messages=searchCopy[currentLanguage]||searchCopy.en;
-      searchFeedback.textContent=serviceQuery?(found.length?messages.found(found.length):messages.none):(activeLetter?messages.letter(found.length,activeLetter):'');
-      found.forEach(([key,name,desc],index)=>{
-        const card=document.createElement('article');card.className='document-card';card.style.animationDelay=`${Math.min(index,8)*30}ms`;
-        const favorite=document.createElement('button');favorite.className='doc-favourite';favorite.type='button';favorite.textContent=favoriteIsSaved(name)?'â™¥':'â™¡';if(favorite.textContent==='â™¥')favorite.classList.add('active');favorite.setAttribute('aria-label',`Save ${name}`);favorite.onclick=()=>{const saved=favorite.classList.toggle('active');favorite.textContent=saved?'â™¥':'â™¡';saveFavorite(name,saved)};
-        const letterTag=document.createElement('span');letterTag.className='doc-letter';letterTag.textContent=key;
-        const title=document.createElement('h3');title.textContent=name;
-        const description=document.createElement('p');description.textContent=desc;
-        const fee=document.createElement('p');fee.className='fee-label';fee.textContent='Final fee confirmed after review';
-        const button=document.createElement('button');button.className='button';button.type='button';button.textContent=tr[currentLanguage].applyButton;button.onclick=()=>apply(name,desc);
-        card.append(favorite,letterTag,title,description,fee,button);grid.append(card);
-      });
-      if(!found.length){const empty=document.createElement('p');empty.className='fineprint';empty.textContent=serviceQuery?messages.none:'No services under this letter yet. WhatsApp Punjab CSC and we will help you.';grid.append(empty)}
-    };
-    const filterByLetter=(letter)=>{activeLetter=letter;document.querySelectorAll('#letters button').forEach((button)=>button.classList.toggle('active',button.dataset.letter===letter));draw()};
-    letters.innerHTML='<button type="button" data-letter="">All</button>'+Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ',letter=>`<button type="button" data-letter="${letter}">${letter}</button>`).join('');
-    letters.querySelectorAll('button').forEach((button)=>button.onclick=()=>filterByLetter(button.dataset.letter));letters.firstElementChild.classList.add('active');
-    serviceSearch.addEventListener('input',()=>{serviceQuery=serviceSearch.value.trim();if(serviceQuery){activeLetter='';letters.querySelectorAll('button').forEach((button)=>button.classList.toggle('active',button.dataset.letter===''))}draw()});
-    draw();
-
-    function apply(name,description){
-      const variantOptions=requirementVariantOptions(name);let selectedVariant=variantOptions[0]?.[0]||'';let requirements=requirementsFor(name,selectedVariant);const currentVariantLabel=()=>variantOptions.find(([value])=>value===selectedVariant)?.[1]||'Not applicable';
-      const isJobApplication=/\b(job|recruitment|post)\b/i.test(name);
-      const jobCopy={
-        en:{uploadLabel:'Job / post notice, advertisement or form',detailsHeading:'Job / post details',title:'Job / post application details',note:'Write at least 150 words. Include the post, department, advertisement number, deadline and the help you need.',placeholder:'Describe the job or post you want to apply for. Add the exact post name, department, advertisement number, deadline, qualifications and any instructions (150 words minimum).',words:'words',error:(count)=>`Write at least 150 words before review. Current count: ${count}.`},
-        pa:{uploadLabel:'à¨¨à©Œà¨•à¨°à©€ / à¨ªà©‹à¨¸à¨Ÿ à¨¦à¨¾ à¨¨à©‹à¨Ÿà¨¿à¨¸, à¨‡à¨¸à¨¼à¨¤à¨¿à¨¹à¨¾à¨° à¨œà¨¾à¨‚ à¨«à¨¾à¨°à¨®',detailsHeading:'à¨¨à©Œà¨•à¨°à©€ / à¨ªà©‹à¨¸à¨Ÿ à¨¦à¨¾ à¨µà©‡à¨°à¨µà¨¾',title:'à¨¨à©Œà¨•à¨°à©€ / à¨ªà©‹à¨¸à¨Ÿ à¨…à¨°à¨œà¨¼à©€ à¨¦à¨¾ à¨µà©‡à¨°à¨µà¨¾',note:'à¨˜à©±à¨Ÿà©‹-à¨˜à©±à¨Ÿ 150 à¨¸à¨¼à¨¬à¨¦ à¨²à¨¿à¨–à©‹à¥¤ à¨ªà©‹à¨¸à¨Ÿ, à¨µà¨¿à¨­à¨¾à¨—, à¨‡à¨¸à¨¼à¨¤à¨¿à¨¹à¨¾à¨° à¨¨à©°à¨¬à¨°, à¨†à¨–à¨¼à¨°à©€ à¨®à¨¿à¨¤à©€ à¨…à¨¤à©‡ à¨¤à©à¨¹à¨¾à¨¨à©‚à©° à¨•à¨¿à¨¹à©œà©€ à¨®à¨¦à¨¦ à¨šà¨¾à¨¹à©€à¨¦à©€ à¨¹à©ˆâ€”à¨‡à¨¹ à¨¦à©±à¨¸à©‹à¥¤',placeholder:'à¨œà¨¿à¨¸ à¨¨à©Œà¨•à¨°à©€ à¨œà¨¾à¨‚ à¨ªà©‹à¨¸à¨Ÿ à¨²à¨ˆ à¨…à¨°à¨œà¨¼à©€ à¨¦à©‡à¨£à©€ à¨¹à©ˆ, à¨‰à¨¸à¨¦à¨¾ à¨ªà©‚à¨°à¨¾ à¨¨à¨¾à¨®, à¨µà¨¿à¨­à¨¾à¨—, à¨‡à¨¸à¨¼à¨¤à¨¿à¨¹à¨¾à¨° à¨¨à©°à¨¬à¨°, à¨†à¨–à¨¼à¨°à©€ à¨®à¨¿à¨¤à©€, à¨¯à©‹à¨—à¨¤à¨¾ à¨…à¨¤à©‡ à¨¹à¨¦à¨¾à¨‡à¨¤à¨¾à¨‚ à¨²à¨¿à¨–à©‹ (à¨˜à©±à¨Ÿà©‹-à¨˜à©±à¨Ÿ 150 à¨¸à¨¼à¨¬à¨¦)à¥¤',words:'à¨¸à¨¼à¨¬à¨¦',error:(count)=>`à¨œà¨¾à¨‚à¨š à¨¤à©‹à¨‚ à¨ªà¨¹à¨¿à¨²à¨¾à¨‚ à¨˜à©±à¨Ÿà©‹-à¨˜à©±à¨Ÿ 150 à¨¸à¨¼à¨¬à¨¦ à¨²à¨¿à¨–à©‹à¥¤ à¨¹à©à¨£ ${count} à¨¸à¨¼à¨¬à¨¦ à¨¹à¨¨à¥¤`},
-        hi:{uploadLabel:'à¤¨à¥Œà¤•à¤°à¥€ / à¤ªà¥‹à¤¸à¥à¤Ÿ à¤•à¤¾ à¤¨à¥‹à¤Ÿà¤¿à¤¸, à¤µà¤¿à¤œà¥à¤žà¤¾à¤ªà¤¨ à¤¯à¤¾ à¤«à¥‰à¤°à¥à¤®',detailsHeading:'à¤¨à¥Œà¤•à¤°à¥€ / à¤ªà¥‹à¤¸à¥à¤Ÿ à¤•à¤¾ à¤µà¤¿à¤µà¤°à¤£',title:'à¤¨à¥Œà¤•à¤°à¥€ / à¤ªà¥‹à¤¸à¥à¤Ÿ à¤†à¤µà¥‡à¤¦à¤¨ à¤•à¤¾ à¤µà¤¿à¤µà¤°à¤£',note:'à¤•à¤® à¤¸à¥‡ à¤•à¤® 150 à¤¶à¤¬à¥à¤¦ à¤²à¤¿à¤–à¥‡à¤‚à¥¤ à¤ªà¥‹à¤¸à¥à¤Ÿ, à¤µà¤¿à¤­à¤¾à¤—, à¤µà¤¿à¤œà¥à¤žà¤¾à¤ªà¤¨ à¤¸à¤‚à¤–à¥à¤¯à¤¾, à¤…à¤‚à¤¤à¤¿à¤® à¤¤à¤¾à¤°à¥€à¤– à¤”à¤° à¤†à¤ªà¤•à¥‹ à¤•à¤¿à¤¸ à¤®à¤¦à¤¦ à¤•à¥€ à¤œà¤¼à¤°à¥‚à¤°à¤¤ à¤¹à¥ˆ, à¤¯à¤¹ à¤¬à¤¤à¤¾à¤à¤‚à¥¤',placeholder:'à¤œà¤¿à¤¸ à¤¨à¥Œà¤•à¤°à¥€ à¤¯à¤¾ à¤ªà¥‹à¤¸à¥à¤Ÿ à¤•à¥‡ à¤²à¤¿à¤ à¤†à¤µà¥‡à¤¦à¤¨ à¤•à¤°à¤¨à¤¾ à¤¹à¥ˆ à¤‰à¤¸à¤•à¤¾ à¤¨à¤¾à¤®, à¤µà¤¿à¤­à¤¾à¤—, à¤µà¤¿à¤œà¥à¤žà¤¾à¤ªà¤¨ à¤¸à¤‚à¤–à¥à¤¯à¤¾, à¤…à¤‚à¤¤à¤¿à¤® à¤¤à¤¾à¤°à¥€à¤–, à¤¯à¥‹à¤—à¥à¤¯à¤¤à¤¾ à¤”à¤° à¤¨à¤¿à¤°à¥à¤¦à¥‡à¤¶ à¤²à¤¿à¤–à¥‡à¤‚ (à¤•à¤® à¤¸à¥‡ à¤•à¤® 150 à¤¶à¤¬à¥à¤¦)à¥¤',words:'à¤¶à¤¬à¥à¤¦',error:(count)=>`à¤œà¤¾à¤à¤š à¤¸à¥‡ à¤ªà¤¹à¤²à¥‡ à¤•à¤® à¤¸à¥‡ à¤•à¤® 150 à¤¶à¤¬à¥à¤¦ à¤²à¤¿à¤–à¥‡à¤‚à¥¤ à¤…à¤­à¥€ ${count} à¤¶à¤¬à¥à¤¦ à¤¹à¥ˆà¤‚à¥¤`}
-      }[currentLanguage];
-      const requirementCopy={
-        en:{caseLabel:'Application type',checklist:'Government document checklist',uploadTitle:'Upload each document',required:'Mandatory',conditional:'If applicable',verified:'Official service checklist',confirm:'Official source; exact case needs confirmation',noUpload:'No document file upload is listed for this step. Bring the details / original documents to Punjab CSC and follow the official portal verification.',fileHint:'Upload a clear scan from the original.',optionalHint:'Upload only if this applies to your case.',formats:'JPG, PNG or PDF',limit:'up to 10 MB'},
-        pa:{caseLabel:'à¨…à¨°à¨œà¨¼à©€ à¨¦à©€ à¨•à¨¿à¨¸à¨®',checklist:'à¨¸à¨°à¨•à¨¾à¨°à©€ à¨¦à¨¸à¨¤à¨¾à¨µà©‡à¨œà¨¼à¨¾à¨‚ à¨¦à©€ à¨¸à©‚à¨šà©€',uploadTitle:'à¨¹à¨° à¨¦à¨¸à¨¤à¨¾à¨µà©‡à¨œà¨¼ à¨…à©±à¨ªà¨²à©‹à¨¡ à¨•à¨°à©‹',required:'à¨²à¨¾à¨œà¨¼à¨®à©€',conditional:'à¨œà©‡ à¨²à¨¾à¨—à©‚ à¨¹à©‹à¨µà©‡',verified:'à¨¸à¨°à¨•à¨¾à¨°à©€ à¨¸à©‡à¨µà¨¾ à¨¦à©€ à¨¸à©‚à¨šà©€',confirm:'à¨¸à¨°à¨•à¨¾à¨°à©€ à¨¸à¨°à©‹à¨¤ â€” à¨•à©‡à¨¸ à¨…à¨¨à©à¨¸à¨¾à¨° à¨ªà©à¨¸à¨¼à¨Ÿà©€ à¨•à¨°à©‹',noUpload:'à¨‡à¨¸ à¨•à¨¦à¨® à¨²à¨ˆ à¨«à¨¾à¨ˆà¨² à¨…à©±à¨ªà¨²à©‹à¨¡ à¨¨à¨¹à©€à¨‚ à¨¦à¨¿à¨–à¨¾à¨ˆ à¨—à¨ˆà¥¤ à¨µà©‡à¨°à¨µà©‡ / à¨…à¨¸à¨² à¨¦à¨¸à¨¤à¨¾à¨µà©‡à¨œà¨¼ Punjab CSC à¨²à¨¿à¨†à¨“ à¨…à¨¤à©‡ à¨¸à¨°à¨•à¨¾à¨°à©€ à¨ªà©‹à¨°à¨Ÿà¨² à¨¦à©€ à¨¹à¨¦à¨¾à¨‡à¨¤ à¨®à©°à¨¨à©‹à¥¤',fileHint:'à¨…à¨¸à¨² à¨¦à¨¸à¨¤à¨¾à¨µà©‡à¨œà¨¼ à¨¦à©€ à¨¸à¨¾à¨«à¨¼ à¨¸à¨•à©ˆà¨¨ à¨…à©±à¨ªà¨²à©‹à¨¡ à¨•à¨°à©‹à¥¤',optionalHint:'à¨¸à¨¿à¨°à¨«à¨¼ à¨†à¨ªà¨£à©‡ à¨•à©‡à¨¸ à¨µà¨¿à©±à¨š à¨²à¨¾à¨—à©‚ à¨¹à©‹à¨µà©‡ à¨¤à¨¾à¨‚ à¨…à©±à¨ªà¨²à©‹à¨¡ à¨•à¨°à©‹à¥¤',formats:'JPG, PNG à¨œà¨¾à¨‚ PDF',limit:'à¨µà©±à¨§ à¨¤à©‹à¨‚ à¨µà©±à¨§ 10 MB'},
-        hi:{caseLabel:'à¤†à¤µà¥‡à¤¦à¤¨ à¤•à¤¾ à¤ªà¥à¤°à¤•à¤¾à¤°',checklist:'à¤¸à¤°à¤•à¤¾à¤°à¥€ à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼à¥‹à¤‚ à¤•à¥€ à¤¸à¥‚à¤šà¥€',uploadTitle:'à¤¹à¤° à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤…à¤ªà¤²à¥‹à¤¡ à¤•à¤°à¥‡à¤‚',required:'à¤…à¤¨à¤¿à¤µà¤¾à¤°à¥à¤¯',conditional:'à¤¯à¤¦à¤¿ à¤²à¤¾à¤—à¥‚ à¤¹à¥‹',verified:'à¤¸à¤°à¤•à¤¾à¤°à¥€ à¤¸à¥‡à¤µà¤¾ à¤•à¥€ à¤¸à¥‚à¤šà¥€',confirm:'à¤¸à¤°à¤•à¤¾à¤°à¥€ à¤¸à¥à¤°à¥‹à¤¤ â€” à¤®à¤¾à¤®à¤²à¥‡ à¤•à¥‡ à¤…à¤¨à¥à¤¸à¤¾à¤° à¤ªà¥à¤·à¥à¤Ÿà¤¿ à¤•à¤°à¥‡à¤‚',noUpload:'à¤‡à¤¸ à¤šà¤°à¤£ à¤•à¥‡ à¤²à¤¿à¤ à¤«à¤¼à¤¾à¤‡à¤² à¤…à¤ªà¤²à¥‹à¤¡ à¤¨à¤¹à¥€à¤‚ à¤¦à¤¿à¤–à¤¾à¤ˆ à¤—à¤ˆ à¤¹à¥ˆà¥¤ à¤µà¤¿à¤µà¤°à¤£ / à¤®à¥‚à¤² à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ Punjab CSC à¤²à¤¾à¤à¤ à¤”à¤° à¤†à¤§à¤¿à¤•à¤¾à¤°à¤¿à¤• à¤ªà¥‹à¤°à¥à¤Ÿà¤² à¤•à¥‡ à¤¨à¤¿à¤°à¥à¤¦à¥‡à¤¶ à¤®à¤¾à¤¨à¥‡à¤‚à¥¤',fileHint:'à¤®à¥‚à¤² à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤•à¥€ à¤¸à¤¾à¤«à¤¼ à¤¸à¥à¤•à¥ˆà¤¨ à¤…à¤ªà¤²à¥‹à¤¡ à¤•à¤°à¥‡à¤‚à¥¤',optionalHint:'à¤•à¥‡à¤µà¤² à¤†à¤ªà¤•à¥‡ à¤®à¤¾à¤®à¤²à¥‡ à¤®à¥‡à¤‚ à¤²à¤¾à¤—à¥‚ à¤¹à¥‹ à¤¤à¥‹ à¤…à¤ªà¤²à¥‹à¤¡ à¤•à¤°à¥‡à¤‚à¥¤',formats:'JPG, PNG à¤¯à¤¾ PDF',limit:'à¤…à¤§à¤¿à¤•à¤¤à¤® 10 MB'}
-      }[currentLanguage]||{caseLabel:'Application type',checklist:'Government document checklist',uploadTitle:'Upload each document',required:'Mandatory',conditional:'If applicable',verified:'Official service checklist',confirm:'Official source; exact case needs confirmation',noUpload:'No document upload is listed for this step.',fileHint:'Upload a clear scan from the original.',optionalHint:'Upload only if this applies to your case.',formats:'JPG, PNG or PDF',limit:'up to 10 MB'};
-      const requirementStatus=(status)=>status==='Mandatory'?requirementCopy.required:status==='Conditional'?requirementCopy.conditional:status;
-      const jobDescriptionField=isJobApplication?`<label class="job-description-field">${jobCopy.title}<textarea name="jobDescription" rows="7" required placeholder="${jobCopy.placeholder}"></textarea><small>${jobCopy.note} <b class="job-word-count">0 / 150 ${jobCopy.words}</b></small></label>`:'';
-      const htmlName=htmlEscape(name),htmlDescription=htmlEscape(description);
-      const variantMarkup=variantOptions.length?`<label class="requirement-case">${requirementCopy.caseLabel}<select id="requirement-variant" name="applicationType">${variantOptions.map(([value,label])=>`<option value="${htmlEscape(value)}" ${value===selectedVariant?'selected':''}>${htmlEscape(label)}</option>`).join('')}</select></label>`:'';
-      const renderChecklist=()=>requirements.documents.map((item)=>`<li><span>${htmlEscape(item.name)}</span><b class="doc-status ${item.status==='Mandatory'?'is-required':'is-conditional'}">${htmlEscape(requirementStatus(item.status))}</b></li>`).join('');
-      const renderUploads=()=>{const documents=requirements.documents.filter((item)=>item.upload);if(!documents.length)return `<p class="no-upload-needed">${requirementCopy.noUpload}</p>`;return documents.map((item,index)=>{const label=isJobApplication&&/job|post|recruitment/i.test(item.name)?jobCopy.uploadLabel:item.name;const limit=item.maxBytes<10*1024*1024?`${Math.round(item.maxBytes/1024)} KB`:`${requirementCopy.limit}`;const hint=item.fileRequired?requirementCopy.fileHint:requirementCopy.optionalHint;return `<label class="upload-zone"><span><b>${htmlEscape(label)}</b><small>${htmlEscape(requirementStatus(item.status))} Â· ${requirementCopy.formats}, ${limit}. ${hint}</small></span><input class="document-file" name="document-${index}" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" data-min-bytes="${item.minBytes}" data-max-bytes="${item.maxBytes}" ${item.fileRequired?'required':''}><span class="upload-result" hidden></span></label>`}).join('')};
-      const appPanel=document.querySelector('#application-panel');
-      const tariff=feeFor(name);
-      const tariffMarkup=tariff?`<section class="fee-quote" id="fee-quote" hidden><b>Fee estimate from Punjab CSC rate note</b><div class="fee-breakdown"><span>Government fee <strong>${htmlEscape(tariff.government)}</strong></span><span>Punjab CSC cafe fee <strong>${htmlEscape(tariff.cafe)}</strong></span><span class="fee-total">Listed total <strong>${htmlEscape(tariff.total)}</strong></span></div><small>${tariff.certainty==='listed'?'Listed total copied from your note; confirm the current portal amount before payment.':'Your note has a range or unclear total. This is an estimate; confirm the exact portal fee and final total before payment.'}</small></section>`:`<section class="fee-quote" id="fee-quote" hidden><b>Fee estimate</b><p>Government charges vary by application. Punjab CSC will confirm the exact government fee and service charge after reviewing your documents.</p></section>`;
-      appPanel.innerHTML=`<div class="application-panel-head"><div><div class="eyebrow">SELECTED SERVICE <i></i></div><h3>${htmlName}</h3><p>${htmlDescription}</p></div><button class="panel-dismiss" type="button" aria-label="Close application form">Ã—</button></div><form class="apply-flow" id="apply-form"><div class="flow-steps"><span class="active">01 Â· Details</span><span>02 Â· Uploads</span><span>03 Â· Review</span></div><div class="requirement-case-slot">${variantMarkup}</div><div class="required-docs"><b>${requirementCopy.checklist}</b><ul id="requirement-list">${renderChecklist()}</ul><small><a id="requirement-source" href="${htmlEscape(requirements.source)}" target="_blank" rel="noopener">${htmlEscape(requirements.sourceLabel)}</a> Â· <span id="requirement-status">${requirements.verified?requirementCopy.verified:requirementCopy.confirm}</span></small><p id="requirement-note">${htmlEscape(requirements.note)}</p></div><div id="applicant-fields"><div class="applicant-grid"><label>Your name<input name="name" required autocomplete="name" placeholder="Full name as on your record"></label><label>Mobile number<input name="mobile" required inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10-digit mobile number"></label><label>Email address <small>(optional)</small><input name="email" type="email" autocomplete="email" placeholder="name@example.com"></label></div>${jobDescriptionField}<div class="upload-list"><b>${requirementCopy.uploadTitle}</b><div id="upload-fields">${renderUploads()}</div></div><label class="form-consent"><input name="consent" type="checkbox" required><span>I consent to send my name, contact details, service, notes and document file names to Punjab CSCâ€™s request system for tracking. Actual files are shared only with the app I choose and are not uploaded to this website. Read the <a href="legal.html#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="legal.html#terms" target="_blank" rel="noopener">Terms &amp; Conditions</a>.</span></label><small class="local-file-note">Request details are saved for follow-up after you choose a share app. Actual JPG/PNG/PDF contents stay on your device and are shared only with your selected app; this website does not store the files.</small>${tariffMarkup}<p class="payment-stage-note"><strong>Payment section</strong>Upload files to see the listed fee estimate. Punjab CSC reviews the documents and confirms the final government fee plus service fee. Online payment is not connected yet. Punjab CSC will confirm the final amount and payment method directly; this site will not collect card or UPI details.</p><button class="button button-dark" id="review-application" type="button">Review application <span>â†’</span></button></div><div id="review-panel" hidden><div class="status-card"><strong>Review your request</strong><p id="review-details"></p><ul id="review-files"></ul><p>Share the selected JPG/PNG/PDF files with Punjab CSC at +91 79866 30948. Online payment is not enabled on this release. Punjab CSC will confirm the final amount and available payment method directly.</p></div><div class="flow-actions"><button class="button button-quiet" id="edit-application" type="button">Back to edit</button><button class="button button-dark send-button" id="send-application" type="button">Share filesâ€¦ <span>â†—</span></button></div><div id="file-share-fallback" class="share-fallback" hidden><b>Sharing did not start.</b><p>If this browser cannot share files, open the Punjab CSC WhatsApp chat at +91 79866 30948, tap the paperclip, and select the same JPG/PNG/PDF files from your device. The message below will not include file names.</p><button id="manual-whatsapp" class="button button-quiet" type="button">Open Punjab CSC WhatsApp</button></div></div></form>`;
-      appPanel.hidden=false;
-      const form=appPanel.querySelector('#apply-form');
-      const requestConsentText=form.querySelector('.form-consent span');
-      if(requestConsentText)requestConsentText.innerHTML='I agree that Punjab CSC can save my request details in my account for follow-up. The request contains my name, phone, email, selected service and notes. Document files are shared only after I choose a share app. Read the <a href="legal.html#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="legal.html#terms" target="_blank" rel="noopener">Terms &amp; Conditions</a>.';
-      const cloudConsent=document.createElement('label');cloudConsent.className='form-consent cloud-storage-consent';
-      cloudConsent.innerHTML='<input name="storeFilesConsent" type="checkbox"><span>Optional: keep a private copy of the selected JPG/PNG/PDF files in my account so I can review or delete them later. Punjab CSC owner access requires authenticator verification. I can leave this unchecked and still share files directly to WhatsApp.</span>';
-      form.querySelector('.form-consent').after(cloudConsent);
-      const localFileNote=form.querySelector('.local-file-note');
-      if(localFileNote)localFileNote.textContent='Files stay on your device unless you choose the separate optional private-copy consent above. When you choose Share files, you still select the app that receives the original attachments.';
-      const jobDescription=form.querySelector('[name="jobDescription"]');
-      if(jobDescription){const counter=form.querySelector('.job-word-count');const updateWordCount=()=>{const words=jobDescription.value.trim().split(/\s+/).filter(Boolean).length;counter.textContent=`${words} / 150 ${jobCopy.words}`};jobDescription.addEventListener('input',updateWordCount)}
-       appPanel.querySelector('.panel-dismiss').onclick=()=>{appPanel.hidden=true;appPanel.replaceChildren()};
-        const updateRequirementPanel=()=>{form.querySelector('#requirement-list').innerHTML=renderChecklist();form.querySelector('#upload-fields').innerHTML=renderUploads();const source=form.querySelector('#requirement-source');source.href=requirements.source;source.textContent=requirements.sourceLabel;form.querySelector('#requirement-status').textContent=requirements.verified?requirementCopy.verified:requirementCopy.confirm;form.querySelector('#requirement-note').textContent=requirements.note;form.querySelector('#fee-quote').hidden=true};
-       form.querySelector('#requirement-variant')?.addEventListener('change',(event)=>{selectedVariant=event.currentTarget.value;requirements=requirementsFor(name,selectedVariant);updateRequirementPanel()});
-        form.addEventListener('change',async(event)=>{const input=event.target.closest('.document-file');if(!input)return;const file=input.files[0];const result=input.parentElement.querySelector('.upload-result');input.dataset.validated='false';if(!file){result.hidden=true;const hasFiles=[...form.querySelectorAll('.document-file')].some((fileInput)=>fileInput.files.length&&fileInput.dataset.validated==='true');form.querySelector('#fee-quote').hidden=!hasFiles;return}result.hidden=false;result.textContent='Checking file typeâ€¦';const minBytes=Number(input.dataset.minBytes)||1,maxBytes=Number(input.dataset.maxBytes)||10*1024*1024;let valid=false;try{valid=await isSupportedDocument(file,minBytes,maxBytes)}catch{}if(input.files[0]!==file)return;if(!valid){input.value='';result.textContent=`Choose a valid JPG, PNG or PDF between ${Math.ceil(minBytes/1024)} KB and ${Math.floor(maxBytes/1024)} KB.`;notify('Choose a valid JPG/PNG/PDF file within the listed size range.')}else{input.dataset.validated='true';result.textContent=`Selected: ${file.name}`}const hasFiles=[...form.querySelectorAll('.document-file')].some((fileInput)=>fileInput.files.length&&fileInput.dataset.validated==='true');form.querySelector('#fee-quote').hidden=!hasFiles;if(hasFiles)form.querySelectorAll('.flow-steps span').forEach((step,index)=>step.classList.toggle('active',index===1))});
-        form.querySelector('#review-application').onclick=()=>{if(!form.reportValidity())return;const words=jobDescription?jobDescription.value.trim().split(/\s+/).filter(Boolean).length:0;if(jobDescription&&words<150){notify(jobCopy.error(words));jobDescription.focus();return}const selectedInputs=[...form.querySelectorAll('.document-file')].filter(input=>input.files.length);if(!selectedInputs.length&&requirements.documents.some(item=>item.upload))return notify('Upload at least one listed document, or bring the original to Punjab CSC for in-person help.');if(selectedInputs.some(input=>input.dataset.validated!=='true'))return notify('Wait for every selected file to finish validation.');if(!currentAccount){notify('Sign in or create a customer account before saving this request.');auth('login');return}const data=new FormData(form);const selected=selectedInputs.map(input=>input.files[0].name+' â€” '+input.parentElement.querySelector('b').textContent);form.querySelector('#review-details').textContent=data.get('name')+' Â· '+data.get('mobile')+(data.get('email')?' Â· '+data.get('email'):'')+' Â· '+name+(selectedVariant?' Â· Application type: '+currentVariantLabel():'')+(jobDescription?' Â· '+jobCopy.detailsHeading+': '+jobDescription.value.trim():'');const reviewFiles=form.querySelector('#review-files');reviewFiles.replaceChildren();selected.forEach(file=>{const item=document.createElement('li');item.textContent=file;reviewFiles.append(item)});form.querySelector('#applicant-fields').hidden=true;form.querySelector('#review-panel').hidden=false;form.querySelectorAll('.flow-steps span').forEach((step,index)=>step.classList.toggle('active',index===2))};
-      form.querySelector('#edit-application').onclick=()=>{form.querySelector('#applicant-fields').hidden=false;form.querySelector('#review-panel').hidden=true;form.querySelectorAll('.flow-steps span').forEach((step,index)=>step.classList.toggle('active',index<2))};
-      const composeRequest=()=>{const data=new FormData(form);return `Punjab CSC application request\nTo: Punjab CSC WhatsApp +91 79866 30948\nService: ${name}\nApplication type: ${currentVariantLabel()}\nName: ${data.get('name')}\nMobile: ${data.get('mobile')}\nEmail: ${data.get('email')||'Not provided'}\nConsent: Customer agreed to the privacy notice and request tracking.\n${jobDescription?`${jobCopy.detailsHeading}:\n${jobDescription.value.trim()}\n`:''}Fee from Punjab CSC rate note: ${tariff?tariff.total:'to be confirmed'}\n${[...form.querySelectorAll('.document-file')].some(input=>input.files.length)?'I am attaching my selected application documents as JPG/PNG/PDF files. Please review them and confirm the final fee.':'I have not attached files yet; please tell me what originals to bring.'} No payment has been made.`};
-      const recordRequest=async(files)=>{const values=new FormData(form),notes=[selectedVariant?'Application type: '+currentVariantLabel():'',jobDescription?jobDescription.value.trim():''].filter(Boolean).join('\n');return window.DeepCSCBackend.createApplication({name:String(values.get('name')||'').trim(),mobile:String(values.get('mobile')||'').trim(),email:String(values.get('email')||'').trim(),service:selectedVariant?name+' ('+currentVariantLabel()+')':name,notes,files,storeFiles:values.get('storeFilesConsent')==='on'})};
-      const fallback=form.querySelector('#file-share-fallback');
-      form.querySelector('#send-application').onclick=async(event)=>{const button=event.currentTarget,files=[...form.querySelectorAll('.document-file')].flatMap(input=>[...input.files]);if(!currentAccount){auth('login');return}button.disabled=true;button.textContent='Preparing your requestâ€¦';try{if(files.length){if(!navigator.share||!navigator.canShare)throw new Error('This browser cannot open a file share sheet. Use WhatsApp below and attach the selected files there.');const data={title:'Punjab CSC Â· '+name,text:composeRequest(),files},shareData={};for(const [key,value] of Object.entries(data)){if(navigator.canShare({[key]:value}))shareData[key]=value}if(!shareData.files)throw new Error('This browser cannot share document attachments. Use WhatsApp and attach the files from your device.');button.textContent='Choose where to shareâ€¦';await navigator.share(shareData)}else{whatsapp(composeRequest())}button.textContent='Saving requestâ€¦';const saved=await recordRequest(files);notify('Request '+saved.id+' is in your account.'+(saved.stored?' '+saved.stored+' private file copy/copies saved.':'')+(saved.storageError?' Private copy could not be saved: '+saved.storageError+'.':'')+' Check that your share app sent the files.');modal.close()}catch(error){if(error.name==='AbortError'){notify('Sharing was cancelled. No request was saved; files were not sent.')}else{const fallback=form.querySelector('#file-share-fallback');fallback.hidden=false;fallback.scrollIntoView({behavior:'smooth',block:'nearest'});notify(error.message)}}finally{button.disabled=false;button.innerHTML='Share filesâ€¦ <span>â†—</span>'}};
-      form.querySelector('#manual-whatsapp').onclick=async()=>{if(!currentAccount){auth('login');return}whatsapp(composeRequest());try{const saved=await recordRequest([]);notify('Request '+saved.id+' is in your account. Attach the original JPG/PNG/PDF files in the WhatsApp chat; the text message does not contain them.')}catch(error){notify('WhatsApp opened, but the request could not be saved: '+error.message)}};
-      appPanel.scrollIntoView({behavior:'smooth',block:'start'});
-    }
-
-    document.querySelectorAll('[data-action]').forEach((button)=>button.onclick=()=>{
-      const action=button.dataset.action;if(action==='apply'){document.querySelector('#documents').scrollIntoView({behavior:'smooth'});document.querySelector('#document-grid .document-card .button')?.focus();return}
-      if(action==='track'){
-        open('<form class="modal-form" id="track-form"><h2>Track application</h2><p>Saved request updates are available in your private Punjab CSC account. Sign in to view your own application list.</p><label class="form-consent"><input name="consent" type="checkbox" required><span>I agree to the <a href="legal.html#privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span></label><button class="button button-dark" id="open-my-account" type="submit">Open my account</button><p class="fineprint">No sample or government approval status is shown here. Punjab CSC will update the request after review.</p></form>');
-        document.querySelector('#track-form').onsubmit=(event)=>{event.preventDefault();currentAccount?showAccount():auth('login')};return;
-      }
-      open(`<form class="modal-form" id="corner-form"><h2>${button.querySelector('b').textContent}</h2><label>Your name<input name="name" required autocomplete="name"></label><label>Application / certificate reference<input name="reference" placeholder="If available"></label><label>Message<input name="message" required placeholder="Tell us what help you need"></label><label class="form-consent"><input name="consent" type="checkbox" required><span>I agree to the <a href="legal.html#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="legal.html#terms" target="_blank" rel="noopener">Terms &amp; Conditions</a>, and consent to send this request to Punjab CSC on WhatsApp.</span></label><button class="button button-dark send-button">Send request on WhatsApp <span>â†—</span></button></form>`);
-      document.querySelector('#corner-form').onsubmit=(event)=>{event.preventDefault();const values=new FormData(event.currentTarget);whatsapp(`Punjab CSC ${action} request\nName: ${values.get('name')}\nReference: ${values.get('reference')}\nMessage: ${values.get('message')}\nConsent: customer agreed to the privacy notice and terms.`);modal.close()};
-    });
-
-    let razorpayScriptPromise;
-    function checkout(){
-      open('<section class="payment-success"><div class="checkout-eyebrow">PUNJAB CSC Â· PAYMENT</div><h2>Online payment is not enabled</h2><p>Do not enter card or UPI details on this site. Punjab CSC will confirm the final amount and share an approved payment method after reviewing the request.</p><button class="button button-lime" id="payment-close" type="button">Close</button></section>');
-      modal.classList.add('checkout-dialog');body.querySelector('#payment-close').onclick=()=>modal.close();
-    }
-    const paymentQuoteId=new URLSearchParams(window.location.hash.slice(1)).get('pay');if(paymentQuoteId){history.replaceState(null,'',window.location.pathname+window.location.search);checkout()}
-
-    document.querySelectorAll('[data-action="apply"]').forEach((button)=>button.onclick=()=>{document.querySelector('#documents').scrollIntoView({behavior:'smooth'});document.querySelector('#document-grid .document-card .button')?.focus()});
-    const visitDate=document.querySelector('#visit-date'),visitWeekday=document.querySelector('#visit-weekday');
-    const weekdayLocales={en:'en-IN',pa:'pa-IN',hi:'hi-IN'},weekdayEmptyText={en:'Choose a date to show weekday',pa:'à¨¦à¨¿à¨¨ à¨µà©‡à¨–à¨£ à¨²à¨ˆ à¨®à¨¿à¨¤à©€ à¨šà©à¨£à©‹',hi:'à¤¦à¤¿à¤¨ à¤¦à¥‡à¤–à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¤¾à¤°à¥€à¤– à¤šà¥à¤¨à¥‡à¤‚'};
-    function chhajliToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const values=Object.fromEntries(parts.map(part=>[part.type,part.value]));return `${values.year}-${values.month}-${values.day}`}
-    visitDate.min=chhajliToday();
-    function updateVisitWeekday(){const lang=document.querySelector('#language').value||'en';if(!visitDate.value){visitWeekday.textContent=weekdayEmptyText[lang]||weekdayEmptyText.en;return}const [year,month,day]=visitDate.value.split('-').map(Number);const selectedDate=new Date(Date.UTC(year,month-1,day,12));visitWeekday.textContent=new Intl.DateTimeFormat(weekdayLocales[lang]||weekdayLocales.en,{timeZone:'Asia/Kolkata',weekday:'long'}).format(selectedDate)}
-    visitDate.addEventListener('input',updateVisitWeekday);updateVisitWeekday();
-    document.querySelector('#distance').oninput=(event)=>{const km=Number(event.target.value)||0;document.querySelector('#charge').innerHTML=`${pageCopy[currentLanguage].charge} <b>â‚¹${Math.ceil(Math.max(0,km-10))*20}</b>`};
-    document.querySelector('#booking-form').onsubmit=(event)=>{event.preventDefault();const values=new FormData(event.currentTarget);whatsapp(`Punjab CSC booking\nName: ${values.get('name')}\nWhatsApp: ${values.get('mobile')}\nService: ${values.get('service')}\nAddress: ${values.get('address')}\nPreferred weekday: ${visitWeekday.textContent}\nPreferred date: ${values.get('visitDate')}\nPreferred time: ${values.get('visitTime')}\nDistance: ${values.get('distance')} km\nConsent: customer agreed to the privacy notice and terms.\n${document.querySelector('#charge').innerText}`)};
-    document.querySelector('#copy-contact').onclick=async()=>{try{await navigator.clipboard.writeText('+91 79866 30948');notify('WhatsApp number copied.')}catch{notify('WhatsApp: +91 79866 30948')}};
-
-    document.querySelector('#account-open').onclick=()=>currentAccount?showAccount():auth('login');
-    document.querySelector('#owner-open').onclick=()=>auth('login',true);
-    function setSignedIn(account){currentAccount=account;const button=document.querySelector('#account-open');if(button)button.textContent='My account'}
-    function clearSignedIn(){currentAccount=null;const button=document.querySelector('#account-open');if(button)button.textContent=pageCopy[currentLanguage].login}
-    async function refreshAuthState(){try{await window.DeepCSCBackend.initialize();const account=window.DeepCSCBackend.getAccount();if(account)setSignedIn(account)}catch{}}
-    function auth(mode,ownerOnly=false){
-      const registering=mode==='register';
-      open('<div class="auth-shell '+(registering?'is-signup ':'')+(ownerOnly?'owner-signin-only':'')+'"><form class="modal-form auth-form" id="auth-form"><div class="auth-brand"><span class="auth-mark">P</span><span>PUNJAB CSC<small>CHHAJLI Â· SUNAM</small></span></div><div class="auth-heading"><span>'+(ownerOnly?'PRIVATE OWNER AREA':'YOUR CUSTOMER ACCOUNT')+'</span><h2>'+(ownerOnly?'Owner dashboard sign in':registering?'Create your account':'Sign in to continue')+'</h2><p>'+(ownerOnly?'Use the private owner account, then verify with Google Authenticator.':registering?'Create a protected Punjab CSC account.':'Sign in to your Punjab CSC account.')+'</p></div>'+(ownerOnly?'':'<div class="auth-tabs"><button type="button" data-mode="login" class="'+(registering?'':'active')+'">Sign in</button><button type="button" data-mode="register" class="'+(registering?'active':'')+'">Sign up</button></div>')+(registering?'<label>Full name<input name="name" required autocomplete="name" placeholder="Enter your name"></label><label>WhatsApp mobile number<input name="mobile" required inputmode="numeric" autocomplete="tel" pattern="[6-9][0-9]{9}" maxlength="10" placeholder="10-digit mobile number"></label>':'')+'<label>Email address<input name="email" type="email" required autocomplete="email" placeholder="name@example.com"></label>'+(registering?'':ownerOnly?'<small class="password-note owner-login-hint" id="owner-login-hint">The public contact email is separate from the private owner login email. After the password step, enter the Google Authenticator code.</small>':'<small class="password-note owner-login-hint" id="owner-login-hint" hidden>Owner dashboard access requires the private owner login and Google Authenticator.</small>')+'<label>Password<input name="password" type="password" '+(registering?'required minlength="12" pattern="(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9]).{12,}"':'required')+' autocomplete="'+(registering?'new-password':'current-password')+'" placeholder="'+(registering?'12+ characters, upper & lower case, number':'Enter your password')+'"></label>'+(registering?'<label>Confirm password<input name="confirm" type="password" required autocomplete="new-password" placeholder="Type your password again"></label><small class="password-note">Choose 12+ characters with uppercase, lowercase and a number. Enter the 6-digit email code to finish signup; no confirmation link is used.</small><label class="form-consent"><input name="consent" type="checkbox" required><span>I agree to the <a href="legal.html#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="legal.html#terms" target="_blank" rel="noopener">Terms &amp; Conditions</a>.</span></label>':(ownerOnly?'':'<small class="password-note">Use your password or request a one-time sign-in code by email.</small><button type="button" class="otp-link" id="email-otp-start">Sign in with email code <span>â†’</span></button>'))+'<button class="auth-submit" type="submit">'+(registering?'Create account':'Sign in')+' <span>â†’</span></button><small class="auth-preview-note" aria-live="polite">Your session stays in memory on this device and is never saved in browser storage.</small></form><aside class="auth-welcome"><div class="welcome-orb orb-one"></div><div class="welcome-orb orb-two"></div><span class="welcome-kicker">PUNJAB CSC Â· CHHAJLI</span><h2>'+(ownerOnly?'Owner access':registering?'Welcome to Punjab CSC':'Welcome back')+'</h2><p>'+(ownerOnly?'This private sign-in is separate from customer registration.':registering?'Verify the 6-digit code sent to your email to activate your private customer account.':'Use your verified email to access your private customer profile.')+'</p><div class="welcome-points"><span>âœ¦ &nbsp; Clear document steps</span><span>âœ¦ &nbsp; Private account access</span><span>âœ¦ &nbsp; Open 24 hours</span></div><button class="auth-switch" type="button" data-mode="'+(registering?'login':'register')+'">'+(registering?'Sign in to your account':'New here? Create an account')+' <span>â†—</span></button></aside></div>');
-      modal.classList.add('auth-dialog');
-      body.querySelectorAll('[data-mode]').forEach((button)=>button.onclick=()=>auth(button.dataset.mode));
-      if(ownerOnly)body.querySelectorAll('[data-mode]').forEach((button)=>button.remove());
-      const emailCodeButton=body.querySelector('#email-otp-start');
-      if(emailCodeButton)emailCodeButton.onclick=()=>otp(body.querySelector('[name="email"]').value);
-      if(!ownerOnly){
-        const forgotPasswordButton=document.createElement('button');
-        forgotPasswordButton.type='button';
-        forgotPasswordButton.className='otp-link';
-        forgotPasswordButton.id='forgot-password-start';
-        forgotPasswordButton.textContent='Forgot password?';
-        emailCodeButton?.insertAdjacentElement('afterend',forgotPasswordButton);
-        forgotPasswordButton.onclick=async()=>{
-          const email=String(body.querySelector('[name="email"]').value||'').trim().toLowerCase();
-          const note=body.querySelector('.auth-preview-note');
-          if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){note.textContent='Enter the email address on your customer account first.';body.querySelector('[name="email"]').focus();return}
-          forgotPasswordButton.disabled=true;note.textContent='Requesting a secure password reset codeâ€¦';
-          try{await window.DeepCSCBackend.requestPasswordRecoveryOtp(email);await otp(email,'recovery')}
-          catch(error){note.textContent=error.message}
-          finally{forgotPasswordButton.disabled=false}
-        };
-      }
-      body.querySelector('#auth-form').onsubmit=async(event)=>{
-        event.preventDefault();const form=event.currentTarget,data=new FormData(form),note=body.querySelector('.auth-preview-note'),password=String(data.get('password')||'');
-        if(registering&&password!==data.get('confirm')){note.textContent='Passwords do not match. Please check both password fields.';return}
-        if(registering&&(password.length<12||!/[A-Z]/.test(password)||!/[a-z]/.test(password)||!/[0-9]/.test(password))){note.textContent='Use at least 12 characters with uppercase, lowercase and a number.';return}
-        const submit=form.querySelector('.auth-submit');submit.disabled=true;
-        try{
-          const result=await window.DeepCSCBackend.auth(registering?'register':'login',{name:data.get('name'),mobile:data.get('mobile'),email:String(data.get('email')||'').trim().toLowerCase(),password});
-          if(result.status==='confirm_email'){
-            const signupEmail=String(data.get('email')||'').trim().toLowerCase();
-            note.textContent='A 6-digit code was sent to your email. Enter it to finish creating your account.';
-            notify('Email verification code sent.');
-            if(registering){await otp(signupEmail,'signup');return}
-            return;
-          }
-          const signedInAccount=window.DeepCSCBackend.getAccount();
-          if(ownerOnly&&!isOwnerEmail(signedInAccount?.email)){await window.DeepCSCBackend.signOut();throw new Error('This account is not enabled for Punjab CSC owner access. Use customer sign-in instead.')}
-          setSignedIn(signedInAccount);
-          if(!registering&&isOwnerEmail(signedInAccount?.email)){await showOwnerAccount(signedInAccount);return}
-          note.textContent=registering?'Your account is ready.':'You are securely signed in.';
-          notify(registering?'Punjab CSC account created.':'Signed in securely.');setTimeout(()=>{if(modal.open)modal.close()},700);
-        }catch(error){note.textContent=error.message}
-        finally{submit.disabled=false}
-      };
-    }
-    async function showOwnerAccount(account){
-      const backend=window.DeepCSCBackend;
-      open(`<div class="owner-workspace owner-auth-shell" id="owner-auth-shell">
-        <aside class="owner-sidebar">
-          <div class="owner-brand"><span class="owner-brand-mark">P</span><span>PUNJAB CSC<small>OWNER WORKSPACE</small></span></div>
-          <span class="owner-nav-label">WORKSPACE</span>
-          <nav class="owner-sidebar-nav" aria-label="Owner dashboard sections">
-            <button type="button" class="active" data-owner-target="owner-overview"><span class="owner-nav-icon">â–¦</span>Overview</button>
-            <button type="button" data-owner-target="owner-applications"><span class="owner-nav-icon">â–¤</span>Applications</button>
-            <button type="button" data-owner-target="owner-customers"><span class="owner-nav-icon">â™™</span>Customers</button>
-            <button type="button" data-owner-target="owner-insights"><span class="owner-nav-icon">â–¥</span>Reports</button>
-            <button type="button" data-owner-target="owner-tools"><span class="owner-nav-icon">âŒ•</span>Quick tools</button>
-            <button type="button" data-owner-target="owner-followups"><span class="owner-nav-icon">âœ“</span>Follow-ups</button>
-            <button type="button" data-owner-target="owner-operations"><span class="owner-nav-icon">âš™</span>Operations</button>
-            <button type="button" data-owner-target="owner-offers"><span class="owner-nav-icon">âœ¦</span>Banners &amp; offers</button>
-            <button type="button" data-owner-target="owner-payment-settings"><span class="owner-nav-icon">â‚¹</span>Payment methods</button>
-            <button type="button" data-owner-target="owner-settings"><span class="owner-nav-icon">âš™</span>Settings</button>
-            <button type="button" data-owner-target="owner-refunds"><span class="owner-nav-icon">â†º</span>Refunds</button>
-            <button type="button" data-owner-target="owner-activity"><span class="owner-nav-icon">â—·</span>Activity log</button>
-          </nav>
-          <div class="owner-sidebar-status"><span class="owner-live-dot"></span><span><strong>Private workspace</strong><small>Owner access protected</small></span></div>
-        </aside>
-        <main class="owner-main">
-          <header class="owner-topbar">
-            <div class="owner-top-title"><span>PRIVATE OWNER AREA</span><strong>Operations dashboard</strong></div>
-            <div class="owner-top-actions">
-              <label class="owner-search"><span aria-hidden="true">âŒ•</span><input id="owner-search" type="search" placeholder="Search customers, mobile, service, fileâ€¦" aria-label="Search customers, applications and document names"></label>
-              <span class="owner-user-chip"><span class="owner-avatar">P</span><span><strong>Punjab CSC</strong><small>Owner</small></span></span>
-              <button type="button" class="owner-signout" id="owner-logout">Sign out</button>
-            </div>
-          </header>
-          <section id="owner-content" class="owner-dashboard-content" aria-live="polite">Checking owner securityâ€¦</section>
-        </main>
-      </div>`);
-      modal.classList.add('auth-dialog','owner-dialog');
-      const content=body.querySelector('#owner-content');
-      body.querySelector('#owner-logout').onclick=async()=>{await backend.signOut();clearSignedIn();modal.close();notify('Signed out.')};
-      const ownerSearch=body.querySelector('#owner-search');
-      body.querySelectorAll('[data-owner-target]').forEach(button=>button.onclick=()=>{
-        body.querySelectorAll('[data-owner-target]').forEach(item=>item.classList.toggle('active',item===button));
-        body.querySelector('#'+button.dataset.ownerTarget)?.scrollIntoView({behavior:'smooth',block:'start'});
-      });
-      const errorBox=message=>{let note=content.querySelector('.owner-error');if(!note){note=document.createElement('p');note.className='password-note owner-error';content.append(note)}note.textContent=message};
-      async function renderDashboard(){
-        content.replaceChildren();
-        const pageHead=document.createElement('div');pageHead.className='owner-page-head';pageHead.id='owner-overview';
-        const welcome=document.createElement('div');welcome.className='owner-page-title';
-        const eyebrow=document.createElement('span');eyebrow.textContent='BUSINESS OVERVIEW';
-        const heading=document.createElement('h1');heading.textContent='Welcome back, Punjab CSC';
-        const subheading=document.createElement('p');subheading.textContent='Here is the latest activity from your service desk.';welcome.append(eyebrow,heading,subheading);
-        const todayLabel=document.createElement('span');todayLabel.className='owner-today';todayLabel.textContent=new Intl.DateTimeFormat('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date());pageHead.append(welcome,todayLabel);
-        const hint=document.createElement('p');hint.className='owner-dashboard-notice';hint.innerHTML='<span aria-hidden="true">â“˜</span><span><strong>Payment gateway not connected.</strong> Online revenue is not available. Refund entries are manual tracking records only.</span>';
-        const toolbar=document.createElement('div');toolbar.className='owner-dashboard-toolbar';
-        const refresh=document.createElement('button');refresh.type='button';refresh.className='owner-tool-button';refresh.innerHTML='<span aria-hidden="true">â†»</span> Refresh';refresh.onclick=()=>renderDashboard();
-        const exportButton=document.createElement('button');exportButton.type='button';exportButton.className='owner-tool-button owner-tool-primary';exportButton.innerHTML='<span aria-hidden="true">â‡©</span> Export Excel-compatible CSV';
-        const addRequestButton=document.createElement('button');addRequestButton.type='button';addRequestButton.className='owner-tool-button owner-tool-primary';addRequestButton.innerHTML='<span aria-hidden="true">ï¼‹</span> New service entry';addRequestButton.onclick=()=>body.querySelector('#owner-new-request')?.scrollIntoView({behavior:'smooth',block:'start'});
-        toolbar.append(addRequestButton,refresh,exportButton);
-        const stats=document.createElement('div');stats.className='owner-stat-row';
-        const analytics=document.createElement('div');analytics.className='owner-analytics-grid';
-        const trendPanel=document.createElement('section');trendPanel.className='owner-chart-panel';
-        const trendHead=document.createElement('div');trendHead.className='owner-panel-head';const trendTitle=document.createElement('div');const trendName=document.createElement('h2');trendName.textContent='Application activity';const trendCaption=document.createElement('p');trendCaption.textContent='Requests received over the last 7 days';trendTitle.append(trendName,trendCaption);const trendTag=document.createElement('span');trendTag.className='owner-chart-tag';trendTag.textContent='Last 7 days';trendHead.append(trendTitle,trendTag);
-        const chart=document.createElement('div');chart.className='owner-bar-chart';chart.setAttribute('aria-label','Applications over the last seven days');trendPanel.append(trendHead,chart);
-        const statusPanel=document.createElement('section');statusPanel.className='owner-chart-panel owner-status-panel';const statusHead=document.createElement('div');statusHead.className='owner-panel-head';const statusTitle=document.createElement('div');const statusName=document.createElement('h2');statusName.textContent='Request status';const statusCaption=document.createElement('p');statusCaption.textContent='Current workload by stage';statusTitle.append(statusName,statusCaption);statusHead.append(statusTitle);const statusContent=document.createElement('div');statusContent.className='owner-status-content';const statusDonut=document.createElement('div');statusDonut.className='owner-status-donut';const statusTotal=document.createElement('strong');statusTotal.textContent='0';const statusTotalLabel=document.createElement('small');statusTotalLabel.textContent='requests';statusDonut.append(statusTotal,statusTotalLabel);const statusLegend=document.createElement('div');statusLegend.className='owner-status-legend';statusContent.append(statusDonut,statusLegend);statusPanel.append(statusHead,statusContent);analytics.append(trendPanel,statusPanel);
-        const actionSection=document.createElement('section');actionSection.className='owner-dashboard-section owner-quick-tools';actionSection.id='owner-tools';
-        const actionHeading=document.createElement('h4');actionHeading.textContent='Quick actions & government portals';
-        const actionHint=document.createElement('p');actionHint.className='password-note';actionHint.textContent='Open a customer request, check its service-specific checklist, or visit an official portal. Portal actions still need your review.';
-        const actionLinks=document.createElement('div');actionLinks.className='owner-portal-links';
-        const portalItems=[['Digital Seva','https://digitalseva.csc.gov.in/'],['Punjab eServices','https://eservices.punjab.gov.in/'],['Punjab eSewa','https://esewa.punjab.gov.in/'],['Punjab job notices','https://punjab.gov.in/impnotifications/'],['PAN services','https://tinpan.proteantech.in/services/pan/pan-index'],['UIDAI','https://uidai.gov.in/']];
-        portalItems.forEach(([label,href])=>{const link=document.createElement('a');link.href=href;link.target='_blank';link.rel='noopener noreferrer';link.textContent=label+' â†—';actionLinks.append(link)});
-        const checkHeading=document.createElement('h5');checkHeading.className='owner-subheading';checkHeading.textContent='Service document checklist';
-        const checklistControls=document.createElement('div');checklistControls.className='owner-checklist-controls';
-        const serviceLabel=document.createElement('label');serviceLabel.textContent='Service';const checklistService=document.createElement('select');checklistService.setAttribute('aria-label','Service checklist');checklistService.add(new Option('Choose a service',''));services.forEach(([,name])=>checklistService.add(new Option(name,name)));serviceLabel.append(checklistService);
-        const variantLabel=document.createElement('label');variantLabel.textContent='Application type';const checklistVariant=document.createElement('select');checklistVariant.setAttribute('aria-label','Application type');variantLabel.append(checklistVariant);
-        checklistControls.append(serviceLabel,variantLabel);
-        const checklistList=document.createElement('ul');checklistList.className='owner-checklist-list';checklistList.setAttribute('aria-live','polite');checklistList.textContent='Choose a service to see its current preparation checklist.';
-        const checklistNote=document.createElement('p');checklistNote.className='owner-checklist-note';checklistNote.textContent='Choose a service and application type. Confirm the current checklist in the official portal before collecting documents.';
-        const checklistSource=document.createElement('a');checklistSource.className='owner-source-link';checklistSource.target='_blank';checklistSource.rel='noopener noreferrer';checklistSource.hidden=true;
-        const renderChecklist=()=>{const name=checklistService.value;if(!name){checklistList.textContent='Choose a service to see its current preparation checklist.';checklistSource.hidden=true;return}const rules=requirementsFor(name,checklistVariant.value||'');checklistList.replaceChildren();rules.documents.forEach(doc=>{const item=document.createElement('li');const text=document.createElement('span');text.textContent=doc.name;const badge=document.createElement('b');badge.textContent=doc.status;badge.className=doc.status==='Mandatory'?'is-required':'is-conditional';item.append(text,badge);checklistList.append(item)});checklistNote.textContent=rules.note||'Confirm the current portal checklist before filing.';checklistSource.href=rules.source;checklistSource.textContent=(rules.sourceLabel||'Official source')+' â†—';checklistSource.hidden=false};
-        const updateChecklistService=()=>{const variants=requirementVariantOptions(checklistService.value);checklistVariant.replaceChildren(...(variants.length?variants.map(([value,label])=>new Option(label,value)): [new Option('Not applicable','')]));renderChecklist()};
-        checklistService.onchange=updateChecklistService;checklistVariant.onchange=renderChecklist;
-        actionSection.append(actionHeading,actionHint,actionLinks,checkHeading,checklistControls,checklistList,checklistNote,checklistSource);
-        const newRequestSection=document.createElement('section');newRequestSection.className='owner-dashboard-section';newRequestSection.id='owner-new-request';
-        const newRequestHeading=document.createElement('h4');newRequestHeading.textContent='Add a customer service request';
-        const newRequestHint=document.createElement('p');newRequestHint.className='password-note';newRequestHint.textContent='Creates a private request record for follow-up. This does not submit the government form, accept payment, or send a message.';
-        const newRequestForm=document.createElement('form');newRequestForm.className='owner-admin-form owner-new-request-form';newRequestForm.innerHTML='<div class="owner-form-grid"><label>Customer name<input name="name" maxlength="100" required autocomplete="name"></label><label>WhatsApp / mobile<input name="mobile" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required placeholder="10-digit number" autocomplete="tel-national"></label></div><label>Customer email (optional)<input name="email" type="email" maxlength="254" autocomplete="email"></label><label>Service<select name="service" required><option value="">Choose a service</option></select></label><label>Notes / follow-up details<textarea name="notes" maxlength="1000" placeholder="Do not enter Aadhaar numbers, passwords, OTPs, or card details."></textarea></label><label class="owner-check"><input name="customerConsent" type="checkbox" required><span>Customer requested this entry and agreed to the details being recorded for this service.</span></label><button class="auth-submit" type="submit">Save private request</button><p class="owner-form-result" role="status" aria-live="polite"></p>';
-        const newServiceSelect=newRequestForm.elements.service;services.forEach(([,name])=>newServiceSelect.add(new Option(name,name)));
-        newRequestSection.append(newRequestHeading,newRequestHint,newRequestForm);
-        const insightsSection=document.createElement('section');insightsSection.className='owner-dashboard-section';insightsSection.id='owner-insights';
-        const insightsHeading=document.createElement('h4');insightsHeading.textContent='Service demand & monthly comparison';
-        const insightsIntro=document.createElement('p');insightsIntro.className='password-note';insightsIntro.textContent='Request counts are calculated from live application records. Revenue and net profit need a verified payment ledger.';
-        const insightGrid=document.createElement('div');insightGrid.className='owner-insight-grid';
-        const serviceDemand=document.createElement('div');serviceDemand.className='owner-insight-panel';const serviceDemandTitle=document.createElement('strong');serviceDemandTitle.textContent='Most requested services';const serviceDemandList=document.createElement('div');serviceDemandList.className='owner-service-demand';serviceDemand.append(serviceDemandTitle,serviceDemandList);
-        const monthCompare=document.createElement('div');monthCompare.className='owner-insight-panel';const monthTitle=document.createElement('strong');monthTitle.textContent='This month vs last month';const monthText=document.createElement('p');monthText.className='owner-month-summary';monthCompare.append(monthTitle,monthText);
-        const financePanel=document.createElement('div');financePanel.className='owner-insight-panel owner-finance-unavailable';const financeTitle=document.createElement('strong');financeTitle.textContent='Revenue, dues & CSC wallet';const financeText=document.createElement('p');financeText.textContent='Not connected â€” no verified payment or wallet feed is available. Do not treat request fees as money collected.';const financeLink=document.createElement('button');financeLink.type='button';financeLink.className='auth-switch';financeLink.textContent='Open payment setup';financeLink.onclick=()=>body.querySelector('#owner-payment-settings')?.scrollIntoView({behavior:'smooth',block:'start'});financePanel.append(financeTitle,financeText,financeLink);
-        insightGrid.append(serviceDemand,monthCompare,financePanel);insightsSection.append(insightsHeading,insightsIntro,insightGrid);
-        const customerSection=document.createElement('section');customerSection.className='owner-dashboard-section';customerSection.id='owner-customers';
-        const customerHeading=document.createElement('h4');customerHeading.textContent='Customer records & private document vault';
-        const customerHint=document.createElement('p');customerHint.className='password-note';customerHint.textContent='Search by customer name, mobile, email, service, application reference, or uploaded filename using the search box above. Private file links expire after 60 seconds.';
-        const customerSummary=document.createElement('div');customerSummary.className='owner-customer-summary';
-        const customerSearchButton=document.createElement('button');customerSearchButton.type='button';customerSearchButton.className='auth-switch';customerSearchButton.textContent='Search customer records';customerSearchButton.onclick=()=>{ownerSearch?.focus();ownerSearch?.scrollIntoView({behavior:'smooth',block:'center'})};
-        customerSection.append(customerHeading,customerHint,customerSummary,customerSearchButton);
-        const queueSection=document.createElement('section');queueSection.className='owner-dashboard-section';queueSection.id='owner-followups';
-        const queueHeading=document.createElement('h4');queueHeading.textContent='Ready for collection & customer follow-up';
-        const queueHint=document.createElement('p');queueHint.className='password-note';queueHint.textContent='â€œWaiting for customerâ€ shows requests needing a follow-up. Review the checklist draft and remove items already received. WhatsApp opens with a draft; you must press Send. SMS is not connected.';
-        const queueGrid=document.createElement('div');queueGrid.className='owner-queue-grid';const readyList=document.createElement('div');readyList.className='owner-queue-column';const readyTitle=document.createElement('strong');readyTitle.textContent='Ready for collection';const readyItems=document.createElement('div');readyItems.className='owner-record-list';readyList.append(readyTitle,readyItems);const followupList=document.createElement('div');followupList.className='owner-queue-column';const followupTitle=document.createElement('strong');followupTitle.textContent='Waiting on customer';const followupItems=document.createElement('div');followupItems.className='owner-record-list';followupList.append(followupTitle,followupItems);queueGrid.append(readyList,followupList);queueSection.append(queueHeading,queueHint,queueGrid);
-        const operationsSection=document.createElement('section');operationsSection.className='owner-dashboard-section';operationsSection.id='owner-operations';
-        const operationsHeading=document.createElement('h4');operationsHeading.textContent='Reminders & centre operations';
-        const operationsHint=document.createElement('p');operationsHint.className='password-note';operationsHint.textContent='These panels need their own secure data connections before they can display live records.';
-        const operationsGrid=document.createElement('div');operationsGrid.className='owner-operations-grid';
-        const operationCards=[['Deadlines & renewals','Job, scholarship, tax, insurance, PUC and licence reminders','Setup needed'],['Staff & daily expenses','Operator activity, paper, ink, electricity and net profit','Setup needed'],['Inventory & low-stock alerts','PVC cards, lamination pouches, photo paper and printer ink','Setup needed'],['Cyber cafe PCs & timers','Available / occupied computers and time-based billing','PC agent required'],['Payments & wallet balance','Verified online payments, dues, refunds and portal wallet','Gateway / ledger required'],['Document checklist follow-up','Service-based checklist is live above; specific missing items need customer confirmation','Checklist available']];
-        operationCards.forEach(([title,detail,state])=>{const card=document.createElement('article');card.className='owner-operation-card';const label=document.createElement('span');label.className=state==='Checklist available'?'is-connected':'is-pending';label.textContent=state;const name=document.createElement('strong');name.textContent=title;const description=document.createElement('p');description.textContent=detail;card.append(label,name,description);operationsGrid.append(card)});
-        operationsSection.append(operationsHeading,operationsHint,operationsGrid);
-        const requestSection=document.createElement('section');requestSection.className='owner-dashboard-section';
-        requestSection.id='owner-applications';
-        const requestHeading=document.createElement('h4');requestHeading.textContent='New form applications and requests';
-        const list=document.createElement('div');list.className='owner-request-list';list.textContent='Loading private requestsâ€¦';requestSection.append(requestHeading,list);
-        const offersSection=document.createElement('section');offersSection.className='owner-dashboard-section';offersSection.id='owner-offers';
-        const offersHeading=document.createElement('h4');offersHeading.textContent='Festival banners and offers';
-        const offerHint=document.createElement('p');offerHint.className='password-note';offerHint.textContent='Schedule an offer to appear on the public website only during the dates you choose.';
-        const offerForm=document.createElement('form');offerForm.className='owner-admin-form';offerForm.innerHTML='<label>Offer title<input name="title" maxlength="100" required placeholder="Festival offer"></label><label>Message<input name="message" maxlength="280" required placeholder="What customers should know"></label><label>Button text<input name="buttonLabel" maxlength="36" value="Ask on WhatsApp" required></label><div class="owner-form-grid"><label>Starts<input name="startsAt" type="datetime-local" required></label><label>Ends<input name="endsAt" type="datetime-local" required></label></div><label class="owner-check"><input name="active" type="checkbox" checked><span>Publish during this scheduled period</span></label><button class="auth-submit" type="submit">Save offer</button>';
-        const offersList=document.createElement('div');offersList.className='owner-record-list';offersSection.append(offersHeading,offerHint,offerForm,offersList);
-        const paymentSection=document.createElement('section');paymentSection.className='owner-dashboard-section owner-payment-section';paymentSection.id='owner-payment-settings';
-        const paymentHeading=document.createElement('h4');paymentHeading.textContent='Payment methods & gateway';
-        const paymentStatus=document.createElement('span');paymentStatus.className='owner-gateway-status';paymentStatus.innerHTML='<i></i> Gateway not connected';
-        const paymentIntro=document.createElement('p');paymentIntro.className='password-note';paymentIntro.textContent='Choose a provider and the methods you plan to offer. This saves a setup draft on this admin browser only; it does not enable checkout or store gateway credentials.';
-        const paymentForm=document.createElement('form');paymentForm.className='owner-admin-form owner-payment-form';paymentForm.innerHTML='<label>Payment gateway provider<select name="provider" required><option value="">Choose a provider</option><option value="razorpay">Razorpay</option><option value="payu">PayU</option><option value="cashfree">Cashfree</option><option value="stripe">Stripe</option><option value="manual">Manual UPI / bank transfer</option></select></label><fieldset class="owner-payment-methods"><legend>Planned customer payment methods</legend><label><input type="checkbox" name="methods" value="upi"><span>UPI</span></label><label><input type="checkbox" name="methods" value="gpay"><span>Google Pay</span></label><label><input type="checkbox" name="methods" value="phonepe"><span>PhonePe</span></label><label><input type="checkbox" name="methods" value="paytm"><span>Paytm</span></label><label><input type="checkbox" name="methods" value="cards"><span>Debit / credit cards</span></label></fieldset><div class="owner-payment-warning"><strong>Checkout stays disabled.</strong> To accept payments later, connect the merchant account through the server-side secrets store, then verify hosted checkout and signed webhooks. Never paste secret keys or card details here.</div><button class="auth-submit" type="submit">Save setup draft</button><p class="owner-payment-saved" role="status" aria-live="polite"></p>';
-        paymentSection.append(paymentHeading,paymentStatus,paymentIntro,paymentForm);
-        try{const saved=JSON.parse(localStorage.getItem('punjab-csc-payment-setup-draft')||'null');if(saved&&typeof saved==='object'){paymentForm.elements.provider.value=typeof saved.provider==='string'?saved.provider:'';(Array.isArray(saved.methods)?saved.methods:[]).forEach(method=>{const input=paymentForm.querySelector(`input[name="methods"][value="${CSS.escape(method)}"]`);if(input)input.checked=true});if(saved.savedAt)paymentForm.querySelector('.owner-payment-saved').textContent='Setup draft saved on this browser.'}}catch{}
-        paymentForm.onsubmit=event=>{event.preventDefault();const data=new FormData(paymentForm),provider=String(data.get('provider')||''),methods=data.getAll('methods').map(String);if(!provider||!methods.length){paymentForm.querySelector('.owner-payment-saved').textContent='Choose a provider and at least one planned payment method.';return}try{localStorage.setItem('punjab-csc-payment-setup-draft',JSON.stringify({provider,methods,savedAt:new Date().toISOString()}));paymentForm.querySelector('.owner-payment-saved').textContent='Setup draft saved on this browser. Customer checkout remains disabled.';notify('Payment setup draft saved on this browser.')}catch{paymentForm.querySelector('.owner-payment-saved').textContent='Could not save the draft in this browser.'}};
-        const settingsSection=document.createElement('section');settingsSection.className='owner-dashboard-section owner-settings-section';settingsSection.id='owner-settings';
-        const settingsHeading=document.createElement('h4');settingsHeading.textContent='Settings Â· centre control room';
-        const settingsIntro=document.createElement('p');settingsIntro.className='password-note';settingsIntro.textContent='Business profile, receipt note, tariff edits and message drafts are saved on this owner browser only. This page does not publish rates or payment details to customers.';
-        const settingsForm=document.createElement('form');settingsForm.className='owner-admin-form owner-settings-form';
-        settingsForm.innerHTML='<fieldset><legend>Centre profile & receipt</legend><div class="owner-form-grid"><label>Centre name<input name="centerName" maxlength="100" required></label><label>CSC ID (optional)<input name="cscId" maxlength="80" placeholder="Add only if assigned"></label></div><label>Address<input name="address" maxlength="180" required></label><div class="owner-form-grid"><label>WhatsApp / contact number<input name="mobile" type="tel" inputmode="tel" maxlength="20" required></label><label>Business email<input name="email" type="email" maxlength="254"></label></div><label>Receipt footer note<textarea name="receiptNote" maxlength="300" placeholder="Optional note printed on receipts"></textarea></label><label>Logo image URL (optional)<input name="logoUrl" type="url" maxlength="500" placeholder="https://â€¦"></label></fieldset><fieldset><legend>Service rates Â· owner draft</legend><p class="password-note">Edit your notes here. Government fees can change and ranges are estimates; confirm the amount on the official portal before taking payment.</p><div class="owner-settings-add-service"><label>New service name<input name="newServiceName" maxlength="100" placeholder="Type a service name"></label><button type="button" class="owner-tool-button" id="owner-add-service">Add service</button></div><div class="owner-settings-rate-wrap"><table class="owner-settings-rates"><thead><tr><th>Service</th><th>Government fee</th><th>Centre charge</th></tr></thead><tbody></tbody></table></div></fieldset><fieldset><legend>WhatsApp message drafts</legend><p class="password-note">These are editable templates for owner review. WhatsApp still opens a draft; you press Send.</p><label>Welcome message<textarea name="welcomeTemplate" maxlength="1000" placeholder="Hello {{name}}â€¦"></textarea></label><label>Completed application<textarea name="completedTemplate" maxlength="1000" placeholder="Hello {{name}}, your {{service}} requestâ€¦"></textarea></label><label>Pending document follow-up<textarea name="followupTemplate" maxlength="1500" placeholder="Hello {{name}}, please sendâ€¦"></textarea></label><label>Payment reminder draft<textarea name="paymentTemplate" maxlength="1000" placeholder="Only use after checking the actual amount and payment status."></textarea></label></fieldset><fieldset><legend>UPI details & QR Â· private setup draft</legend><label>UPI ID<input name="upiId" maxlength="120" placeholder="name@bank"></label><label>Upload payment QR image<input name="qrImage" type="file" accept="image/png,image/jpeg,image/webp"></label><div class="owner-settings-qr-preview" hidden><img alt="Saved private payment QR preview"><button type="button" class="auth-switch">Remove QR</button></div><p class="password-note">Saved only on this browser. This QR is not shown to customers and does not confirm or process payments. Hosted gateway checkout is still separate.</p></fieldset><button class="auth-submit" type="submit">Save settings on this browser</button><p class="owner-settings-saved" role="status" aria-live="polite"></p>';
-        const ownerSettingsKey='punjab-csc-owner-settings-v1';let ownerSettings={};try{const saved=JSON.parse(localStorage.getItem(ownerSettingsKey)||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))ownerSettings=saved}catch{}
-        const settingsRates=settingsForm.querySelector('.owner-settings-rates tbody');
-        const settingsServiceNames=[...new Set(services.map(([,name])=>name))];
-        const appendSettingsRate=(name,government='',charge='')=>{if(!name||[...settingsRates.querySelectorAll('th[scope="row"]')].some(cell=>cell.textContent.toLowerCase()===name.toLowerCase()))return false;const source=feeFor(name),row=document.createElement('tr'),serviceCell=document.createElement('th'),governmentCell=document.createElement('td'),chargeCell=document.createElement('td'),governmentInput=document.createElement('input'),chargeInput=document.createElement('input');serviceCell.scope='row';serviceCell.textContent=name;governmentInput.name='governmentFee:'+name;governmentInput.maxLength=80;governmentInput.setAttribute('aria-label',name+' government fee');governmentInput.placeholder='Confirm on portal';governmentInput.value=government||(source?.government||'');chargeInput.name='serviceCharge:'+name;chargeInput.maxLength=80;chargeInput.setAttribute('aria-label',name+' centre charge');chargeInput.placeholder='Set centre charge';chargeInput.value=charge||(source?.cafe||'');governmentCell.append(governmentInput);chargeCell.append(chargeInput);row.append(serviceCell,governmentCell,chargeCell);settingsRates.append(row);return true};
-        [...settingsServiceNames,...(Array.isArray(ownerSettings.customServices)?ownerSettings.customServices:[])].forEach(name=>appendSettingsRate(name,ownerSettings.rates?.['governmentFee:'+name],ownerSettings.rates?.['serviceCharge:'+name]));
-        settingsSection.append(settingsHeading,settingsIntro,settingsForm);
-        const staffSection=document.createElement('section');staffSection.className='owner-settings-card';const staffTitle=document.createElement('strong');staffTitle.textContent='Staff accounts & permissions';const staffText=document.createElement('p');staffText.textContent='Staff login creation is not configured. Do not share the owner login or store staff passwords in this browser. Add separate server-authenticated accounts and enforce roles before inviting staff.';const roleList=document.createElement('ul');[['Operator','Create requests only'],['Supervisor','Review and update applications'],['Owner','Customer data, settings and reports']].forEach(([role,permission])=>{const item=document.createElement('li');item.textContent=role+' Â· '+permission;roleList.append(item)});staffSection.append(staffTitle,staffText,roleList);
-        const backupSection=document.createElement('section');backupSection.className='owner-settings-card';const backupTitle=document.createElement('strong');backupTitle.textContent='Data export & account security';const backupText=document.createElement('p');backupText.textContent='Export the application list as a CSV from this owner dashboard. Customer document files are not included. Google Authenticator verification is required for owner access; passwords and gateway secrets are never stored here.';const backupButton=document.createElement('button');backupButton.type='button';backupButton.className='owner-tool-button owner-tool-primary';backupButton.textContent='Download applications CSV';backupButton.disabled=true;const securityState=document.createElement('small');securityState.className='owner-settings-security';securityState.textContent='Owner access is protected by sign-in and authenticator verification.';backupSection.append(backupTitle,backupText,backupButton,securityState);
-        settingsSection.append(staffSection,backupSection);
-        const settingsFields=['centerName','cscId','address','mobile','email','receiptNote','logoUrl','welcomeTemplate','completedTemplate','followupTemplate','paymentTemplate','upiId'];
-        const settingsDefaults={centerName:'Punjab CSC',address:'Chhajli, Sunam',mobile:'+91 7986630948',email:'punjabcsco6@gmail.com'};
-        settingsFields.forEach(name=>{settingsForm.elements[name].value=typeof ownerSettings[name]==='string'?ownerSettings[name]:(settingsDefaults[name]||'')});
-        settingsRates.querySelectorAll('input').forEach(input=>{if(typeof ownerSettings.rates?.[input.name]==='string')input.value=ownerSettings.rates[input.name]});
-        settingsForm.querySelector('#owner-add-service').onclick=()=>{const input=settingsForm.elements.newServiceName,name=input.value.trim();if(name.length<2){settingsForm.querySelector('.owner-settings-saved').textContent='Enter a service name with at least two characters.';return}if(!appendSettingsRate(name)){settingsForm.querySelector('.owner-settings-saved').textContent='That service is already in the list.';return}input.value='';settingsForm.querySelector('.owner-settings-saved').textContent='Service added to this browser draft. Save settings to keep it.'};
-        const qrPreview=settingsForm.querySelector('.owner-settings-qr-preview'),qrImage=qrPreview.querySelector('img');
-        const showQr=dataUrl=>{ownerSettings.qrDataUrl=dataUrl||'';qrPreview.hidden=!dataUrl;if(dataUrl)qrImage.src=dataUrl;else qrImage.removeAttribute('src')};showQr(typeof ownerSettings.qrDataUrl==='string'?ownerSettings.qrDataUrl:'');
-        settingsForm.elements.qrImage.onchange=async()=>{const file=settingsForm.elements.qrImage.files?.[0];if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>350*1024){settingsForm.querySelector('.owner-settings-saved').textContent='Choose a PNG, JPG or WebP QR image smaller than 350 KB.';settingsForm.elements.qrImage.value='';return}try{showQr(await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Could not read this QR image.'));reader.readAsDataURL(file)}))}catch(error){settingsForm.querySelector('.owner-settings-saved').textContent=error.message}};
-        qrPreview.querySelector('button').onclick=()=>{showQr('');settingsForm.elements.qrImage.value=''};
-        settingsForm.onsubmit=event=>{event.preventDefault();const data=new FormData(settingsForm),settings={...ownerSettings,savedAt:new Date().toISOString()};settingsFields.forEach(name=>settings[name]=String(data.get(name)||'').trim());settings.rates={};const allSettingsServices=[...settingsRates.querySelectorAll('th[scope="row"]')].map(cell=>cell.textContent);settings.customServices=allSettingsServices.filter(name=>!settingsServiceNames.includes(name));settingsRates.querySelectorAll('input').forEach(input=>settings.rates[input.name]=input.value.trim());try{localStorage.setItem(ownerSettingsKey,JSON.stringify(settings));ownerSettings=settings;settingsForm.querySelector('.owner-settings-saved').textContent='Settings saved on this browser. Rates and QR are not published to the customer site.';notify('Owner settings saved on this browser.')}catch{settingsForm.querySelector('.owner-settings-saved').textContent='Could not save. Remove the QR image or reduce its file size, then try again.'}};
-        const refundsSection=document.createElement('section');refundsSection.className='owner-dashboard-section';refundsSection.id='owner-refunds';
-        const refundsHeading=document.createElement('h4');refundsHeading.textContent='Refund records and status';
-        const refundHint=document.createElement('p');refundHint.className='password-note';refundHint.textContent='Manual tracking only. No refund is sent by this website, and these records are not verified against a payment gateway.';
-        const refundForm=document.createElement('form');refundForm.className='owner-admin-form';refundForm.innerHTML='<label>Related application<select name="applicationId"><option value="">No application reference</option></select></label><div class="owner-form-grid"><label>Refund amount (â‚¹)<input name="amountRupees" type="number" min="0.01" step="0.01" required></label><label>Method<select name="method" required><option value="upi">UPI</option><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label></div><label>Reason<textarea name="reason" maxlength="500" required placeholder="Short reason for the manual refund record"></textarea></label><label>Payment reference (optional)<input name="paymentReference" maxlength="160" placeholder="Reference to check manually"></label><button class="auth-submit" type="submit">Add manual refund record</button>';
-        const refundsList=document.createElement('div');refundsList.className='owner-record-list';refundsSection.append(refundsHeading,refundHint,refundForm,refundsList);
-        const activitySection=document.createElement('section');activitySection.className='owner-dashboard-section';activitySection.id='owner-activity';
-        const activityHeading=document.createElement('h4');activityHeading.textContent='Recent activity';
-        const activityList=document.createElement('div');activityList.className='owner-record-list';activityList.textContent='Loading activityâ€¦';activitySection.append(activityHeading,activityList);
-        content.append(pageHead,toolbar,hint,stats,analytics,actionSection,newRequestSection,insightsSection,customerSection,queueSection,operationsSection,requestSection,offersSection,paymentSection,settingsSection,refundsSection,activitySection);
-        try{
-          const startOfDay=new Date();startOfDay.setHours(0,0,0,0);
-          const [requests,customers,offers,refunds,events]=await Promise.all([
-            backend.listOwnerApplications(),backend.listOwnerCustomersSince(startOfDay.toISOString()),
-            backend.listOwnerOffers(),backend.listOwnerRefunds(),backend.listOwnerActivity()
-          ]);
-          const todayRequests=requests.filter(item=>new Date(item.created_at).toDateString()===new Date().toDateString()).length;
-          const pendingCount=requests.filter(item=>['new','in_review','waiting_customer'].includes(item.status)).length;
-          const readyCount=requests.filter(item=>item.status==='completed').length;
-          const counts=[['Applications today',todayRequests],['Pending work',pendingCount],['Ready for collection',readyCount],['New customer profiles today',customers.length],['Revenue / dues','Not connected'],['CSC wallet','Not connected']];
-          const statIcons=['â–¤','â—‰','âœ“','â™™','â‚¹','â—ˆ'];counts.forEach(([label,value],index)=>{const card=document.createElement('div');card.className='owner-stat';const icon=document.createElement('span');icon.className='owner-stat-icon';icon.textContent=statIcons[index];const copy=document.createElement('span');copy.className='owner-stat-copy';const small=document.createElement('small');small.textContent=label;const strong=document.createElement('strong');strong.textContent=String(value);copy.append(small,strong);card.append(icon,copy);stats.append(card)});
-          const customerCount=document.createElement('span');customerCount.className='owner-customer-count';customerCount.innerHTML='<strong></strong><small>saved customer profiles created today</small>';customerCount.querySelector('strong').textContent=String(customers.length);const requestCount=document.createElement('span');requestCount.className='owner-customer-count';requestCount.innerHTML='<strong></strong><small>private service records available to search</small>';requestCount.querySelector('strong').textContent=String(requests.length);customerSummary.append(customerCount,requestCount);
-          const byService=new Map();requests.forEach(item=>{const key=String(item.service||'Unspecified service');byService.set(key,(byService.get(key)||0)+1)});
-          const popularServices=[...byService.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6);serviceDemandList.replaceChildren();
-          if(!popularServices.length){serviceDemandList.textContent='Service counts will appear when requests arrive.'}else{const highest=popularServices[0][1];popularServices.forEach(([name,count])=>{const row=document.createElement('div');row.className='owner-demand-row';const label=document.createElement('span');label.textContent=name;const track=document.createElement('span');track.className='owner-demand-track';const bar=document.createElement('i');bar.style.width=Math.max(4,Math.round(count/highest*100))+'%';track.append(bar);const value=document.createElement('b');value.textContent=String(count);row.append(label,track,value);serviceDemandList.append(row)})}
-          const nowMonth=new Date();const monthStart=new Date(nowMonth.getFullYear(),nowMonth.getMonth(),1);const previousStart=new Date(nowMonth.getFullYear(),nowMonth.getMonth()-1,1);const thisMonth=requests.filter(item=>new Date(item.created_at)>=monthStart).length;const lastMonth=requests.filter(item=>{const date=new Date(item.created_at);return date>=previousStart&&date<monthStart}).length;const difference=thisMonth-lastMonth;const differenceText=lastMonth?`${difference>=0?'+':''}${difference} requests (${difference>=0?'+':''}${Math.round(difference/lastMonth*100)}%) compared with last month`:`${thisMonth} request${thisMonth===1?'':'s'} this month Â· no previous-month baseline`;monthText.textContent=differenceText;
-          newRequestForm.onsubmit=async(event)=>{event.preventDefault();const data=new FormData(newRequestForm),save=newRequestForm.querySelector('button[type="submit"]'),result=newRequestForm.querySelector('.owner-form-result');const mobile=String(data.get('mobile')||'').replace(/\D/g,'');if(!/^[0-9]{10}$/.test(mobile)){result.textContent='Enter a valid 10-digit Indian mobile number.';return}const notes=[String(data.get('notes')||'').trim(),'Customer consent to record this service request confirmed by the owner on '+new Date().toISOString()].filter(Boolean).join('\n');save.disabled=true;result.textContent='Saving private requestâ€¦';try{await backend.createApplication({name:String(data.get('name')||'').trim(),mobile,email:String(data.get('email')||'').trim(),useAccountEmail:false,service:String(data.get('service')||''),notes,files:[],storeFiles:false});notify('Private service request saved.');await renderDashboard()}catch(error){result.textContent=error.message;save.disabled=false}};
-          const fillMessageTemplate=(template,request)=>String(template||'').replace(/\{\{name\}\}/gi,request.applicant_name||'Customer').replace(/\{\{service\}\}/gi,request.service||'service').replace(/\{\{reference\}\}/gi,String(request.id).slice(0,8).toUpperCase());
-          const renderQueue=(target,items,type)=>{target.replaceChildren();if(!items.length){target.textContent=type==='ready'?'No completed requests ready for collection.':'No requests are waiting on a customer.';return}items.slice(0,8).forEach(request=>{const row=document.createElement('article');row.className='owner-record-card owner-queue-card';const title=document.createElement('strong');title.textContent=(request.applicant_name||'Customer')+' Â· '+(request.service||'Service');const meta=document.createElement('small');meta.textContent='Ref '+String(request.id).slice(0,8).toUpperCase()+' Â· '+new Date(request.created_at).toLocaleDateString();let checklistMessage=null;if(type==='followup'){const serviceName=[...services.map(([,name])=>name)].sort((a,b)=>b.length-a.length).find(name=>request.service===name||String(request.service||'').startsWith(name+' ('));const variants=serviceName?requirementVariantOptions(serviceName):[];const chosen=variants.find(([value,label])=>String(request.service||'').toLowerCase().includes(label.toLowerCase()));const rules=requirementsFor(serviceName||request.service||'',chosen?.[0]||'');checklistMessage=document.createElement('textarea');checklistMessage.className='owner-followup-message';checklistMessage.maxLength=1800;checklistMessage.setAttribute('aria-label','Review and edit customer follow-up checklist message');const custom=fillMessageTemplate(ownerSettings.followupTemplate,request);checklistMessage.value=(custom||`Hello ${request.applicant_name||''}, we are following up on your ${request.service||'service'} request (${String(request.id).slice(0,8).toUpperCase()}). Please confirm which items are still pending:`)+`\n${rules.documents.map(doc=>'â€¢ '+doc.name+' â€” '+doc.status).join('\n')}\nWe will confirm the exact current requirements on the official portal.`;const editHint=document.createElement('small');editHint.className='owner-followup-hint';editHint.textContent='Review this draft and remove items already received before opening WhatsApp.';row.append(title,meta,editHint,checklistMessage)}else row.append(title,meta);const action=document.createElement('button');action.type='button';action.className='auth-switch';action.textContent=type==='ready'?'Prepare pickup message':'Review checklist & open WhatsApp';action.onclick=()=>{const phone=String(request.mobile||'').replace(/\D/g,'');if(!/^(?:91)?[6-9][0-9]{9}$/.test(phone)){notify('This request has no valid Indian mobile number. Update the customer contact first.');return}const recipient=phone.length===10?'91'+phone:phone;const ref=String(request.id).slice(0,8).toUpperCase();const message=type==='ready'?(fillMessageTemplate(ownerSettings.completedTemplate,request)||`Hello ${request.applicant_name||''}, your ${request.service||'service'} request (${ref}) is marked ready for collection. Please contact Punjab CSC to confirm pickup.`):checklistMessage.value;window.open(`https://wa.me/${recipient}?text=${encodeURIComponent(message)}`,'_blank','noopener,noreferrer')};row.append(action);target.append(row)})};
-          renderQueue(readyItems,requests.filter(item=>item.status==='completed'),'ready');renderQueue(followupItems,requests.filter(item=>item.status==='waiting_customer'),'followup');
-          if(ownerSearch)ownerSearch.oninput=()=>{const query=ownerSearch.value.trim().toLocaleLowerCase();list.querySelectorAll('.owner-request-card').forEach(card=>{card.hidden=!card.dataset.search.includes(query)})};
-          const weekDays=Array.from({length:7},(_,offset)=>{const date=new Date();date.setHours(0,0,0,0);date.setDate(date.getDate()-(6-offset));return date});
-          const dailyCounts=weekDays.map(date=>requests.filter(item=>{const created=new Date(item.created_at);return created.toDateString()===date.toDateString()}).length),maxDaily=Math.max(1,...dailyCounts);
-          weekDays.forEach((date,index)=>{const group=document.createElement('div');group.className='owner-bar-group';const count=document.createElement('small');count.textContent=String(dailyCounts[index]);const track=document.createElement('div');track.className='owner-bar-track';const bar=document.createElement('span');bar.style.height=Math.max(7,Math.round((dailyCounts[index]/maxDaily)*100))+'%';if(index===6)bar.classList.add('is-today');bar.title=dailyCounts[index]+' request'+(dailyCounts[index]===1?'':'s');track.append(bar);const label=document.createElement('small');label.textContent=new Intl.DateTimeFormat('en',{weekday:'short'}).format(date);group.append(count,track,label);chart.append(group)});
-          const statusNames=['new','in_review','waiting_customer','completed','cancelled'];const statusColors=['#ef5776','#f1a443','#4387ef','#22b58b','#9ba8b7'];const statusCounts=statusNames.map(status=>requests.filter(item=>item.status===status).length);statusTotal.textContent=String(requests.length);const totalForDonut=Math.max(1,requests.length);let cursor=0;const stops=statusCounts.map((count,index)=>{const start=cursor;cursor+=count/totalForDonut*100;return `${statusColors[index]} ${start}% ${cursor}%`});statusDonut.style.background=`conic-gradient(${stops.join(',')})`;statusNames.forEach((name,index)=>{const row=document.createElement('div');row.className='owner-status-row';const label=document.createElement('span');label.innerHTML=`<i style="--status-color:${statusColors[index]}"></i>${name.replaceAll('_',' ')}`;const value=document.createElement('strong');value.textContent=String(statusCounts[index]);row.append(label,value);statusLegend.append(row)});
-           exportButton.onclick=()=>{const fields=['Reference','Service','Applicant','Mobile','Email','Status','Created','Notes'];const cell=value=>'"'+String(value??'').replace(/"/g,'""')+'"';const rows=requests.map(item=>[String(item.id).slice(0,8).toUpperCase(),item.service,item.applicant_name,item.mobile,item.contact_email,item.status,item.created_at,item.notes].map(cell).join(','));const csv='\uFEFF'+[fields.map(cell).join(','),...rows].join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const anchor=document.createElement('a');anchor.href=URL.createObjectURL(blob);anchor.download='punjab-csc-applications.csv';anchor.click();URL.revokeObjectURL(anchor.href)};backupButton.onclick=()=>exportButton.click();backupButton.disabled=false;
-          list.replaceChildren();
-          if(!requests.length){list.textContent='No customer requests have arrived yet.'}
-          const statuses=['new','in_review','waiting_customer','completed','cancelled'];
-          for(const request of requests){
-            const card=document.createElement('article');card.className='owner-request-card';
-            card.dataset.search=[request.service,request.applicant_name,request.mobile,request.contact_email,request.id,(request.customer_documents||[]).map(doc=>doc.original_name)].filter(Boolean).join(' ').toLocaleLowerCase();
-            const title=document.createElement('h4');title.textContent=request.service||'Service request';
-            const customer=document.createElement('p');customer.textContent=(request.applicant_name||'Customer')+' Â· '+(request.mobile||'')+(request.contact_email?' Â· '+request.contact_email:'');
-            const meta=document.createElement('small');meta.textContent='Ref '+String(request.id).slice(0,8).toUpperCase()+' Â· '+new Date(request.created_at).toLocaleString();
-            const notes=document.createElement('p');notes.className='owner-request-notes';notes.textContent=request.notes||'No additional notes.';
-            const status=document.createElement('select');status.setAttribute('aria-label','Application status');
-            statuses.forEach(value=>{const option=document.createElement('option');option.value=value;option.textContent=value.replaceAll('_',' ');status.append(option)});
-            status.value=request.status;
-            status.onchange=async()=>{const previous=request.status;status.disabled=true;try{await backend.updateApplicationStatus(request.id,status.value);request.status=status.value;notify('Application status updated.');await renderDashboard()}catch(error){notify(error.message);status.value=previous;status.disabled=false}};
-            card.append(title,customer,meta,notes,status);
-            const docs=request.customer_documents||[];
-            if(docs.length){
-              const fileHeading=document.createElement('p');fileHeading.className='owner-file-heading';fileHeading.textContent='Private customer files ('+docs.length+')';card.append(fileHeading);
-              for(const doc of docs){
-                const row=document.createElement('div');row.className='owner-file-row';
-                const fileName=document.createElement('span');fileName.textContent=doc.original_name+' Â· '+Math.ceil(doc.file_size_bytes/1024)+' KB';
-                const makeLink=document.createElement('button');makeLink.type='button';makeLink.className='auth-switch';makeLink.textContent='Create secure link';
-                makeLink.onclick=async()=>{makeLink.disabled=true;makeLink.textContent='Creating linkâ€¦';try{const href=await backend.createOwnerDocumentLink(doc.object_path);const link=document.createElement('a');link.href=href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Open file Â· link expires in 60 seconds';row.append(link);makeLink.remove()}catch(error){notify(error.message);makeLink.disabled=false;makeLink.textContent='Create secure link'}};
-                row.append(fileName,makeLink);card.append(row)
-              }
-            }
-            list.append(card);
-            const option=document.createElement('option');option.value=request.id;option.textContent=String(request.id).slice(0,8).toUpperCase()+' Â· '+request.service+' Â· '+request.applicant_name;refundForm.elements.applicationId.append(option);
-          }
-          offersList.replaceChildren();
-          if(!offers.length)offersList.textContent='No offers are scheduled.';
-          for(const offer of offers){const row=document.createElement('article');row.className='owner-record-card';const title=document.createElement('strong');title.textContent=offer.title;const message=document.createElement('p');message.textContent=offer.message;const dates=document.createElement('small');dates.textContent=new Date(offer.starts_at).toLocaleString()+' â€“ '+new Date(offer.ends_at).toLocaleString();const state=document.createElement('span');state.className='owner-record-state';state.textContent=offer.active?'Scheduled / live':'Hidden';const toggle=document.createElement('button');toggle.type='button';toggle.className='auth-switch';toggle.textContent=offer.active?'Pause offer':'Publish offer';toggle.onclick=async()=>{toggle.disabled=true;try{await backend.updateOwnerOffer(offer.id,!offer.active);await renderDashboard()}catch(error){toggle.disabled=false;notify(error.message)}};const remove=document.createElement('button');remove.type='button';remove.className='auth-switch';remove.textContent='Delete';remove.onclick=async()=>{if(!confirm('Delete this offer?'))return;remove.disabled=true;try{await backend.deleteOwnerOffer(offer.id);await renderDashboard()}catch(error){remove.disabled=false;notify(error.message)}};row.append(title,message,dates,state,toggle,remove);offersList.append(row)}
-          offerForm.onsubmit=async(event)=>{event.preventDefault();const data=new FormData(offerForm),save=offerForm.querySelector('button[type=submit]');save.disabled=true;try{await backend.saveOwnerOffer({title:data.get('title'),message:data.get('message'),buttonLabel:data.get('buttonLabel'),startsAt:new Date(data.get('startsAt')).toISOString(),endsAt:new Date(data.get('endsAt')).toISOString(),active:data.get('active')==='on'});notify('Offer saved. The banner appears only in its scheduled window.');await renderDashboard()}catch(error){notify(error.message);save.disabled=false}};
-          refundsList.replaceChildren();
-          if(!refunds.length)refundsList.textContent='No manual refund records.';
-          for(const refund of refunds){const row=document.createElement('article');row.className='owner-record-card';const customer=refund.customer_applications||{};const title=document.createElement('strong');title.textContent='â‚¹'+(Number(refund.amount_paise)/100).toFixed(2)+' Â· '+(customer.applicant_name||'No linked customer');const reason=document.createElement('p');reason.textContent=refund.reason+(refund.payment_reference?' Â· Ref '+refund.payment_reference:'');const meta=document.createElement('small');meta.textContent=(customer.service||'Manual record')+' Â· '+refund.method.replaceAll('_',' ')+' Â· '+new Date(refund.created_at).toLocaleString();const status=document.createElement('select');status.setAttribute('aria-label','Manual refund status');['pending','approved','processed','declined'].forEach(value=>{const option=document.createElement('option');option.value=value;option.textContent=value.replaceAll('_',' ');status.append(option)});status.value=refund.status;status.onchange=async()=>{const previous=refund.status;status.disabled=true;try{await backend.updateOwnerRefundStatus(refund.id,status.value);refund.status=status.value;notify('Manual refund status recorded.')}catch(error){status.value=previous;notify(error.message)}finally{status.disabled=false}};row.append(title,reason,meta,status);refundsList.append(row)}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíïôÝ:-jZ.¶›­–)Þ³R‚‚’Óâ°Ð¢6öç7BtÒs“s“ƒcc3“C‚s°Ð¢6öç7BõtäU%ôTÔ”Å2ÒæWr6WB…²w6æFVW†&ÖVävÖ–Âæ6öÒuÒ“°Ð¢6öç7B—4÷væW$VÖ–ÂÒVÖ–ÂÓâõtäU%ôTÔ”Å2æ†2…7G&–ær†VÖ–ÂÇÂrr’çG&–Ò‚’çFôÆ÷vW$66R‚’“°Ð¢òòWF‚&VÆöæw2–âF†R&6¶VæBw2‡GGöæÇ’6öö¶–RÂæWfW"'&÷w6W"7F÷&vRàÐ¢òò6ÆV"7&VFVçF–ÂÖÆ–¶RfÇVW2ÆVgB'’öÆFW"&Wf–Ww2v†–ÆR&W6W'f–ær6öç6VçBöff÷&—FW2àÐ¢f÷"†6öç7B7F÷&vTæÖRöb²vÆö6Å7F÷&vRrÂw6W76–öå7F÷&vRuÒ’°Ð¢G'’°Ð¢6öç7B7F÷&RÒv–æF÷u·7F÷&vTæÖUÓ°Ð¢6öç7B7FÆT¶W—2ÒµÓ°Ð¢f÷"†ÆWB–æFW‚Ò²–æFW‚Â7F÷&RæÆVæwFƒ²–æFW‚³Ò’°Ð¢6öç7B¶W’Ò7F÷&Ræ¶W’†–æFW‚“°Ð¢–b†¶W’bbò‡Fö¶VçÆ§wGÆ7&VFVçF–ÇÆWF‡Ç6W76–öâ’ö’çFW7B†¶W’’’7FÆT¶W—2çW6‚†¶W’“°Ð¢ÐÐ¢f÷"†6öç7B¶W’öb7FÆT¶W—2’7F÷&Rç&VÖ÷fT—FVÒ†¶W’“°Ð¢Ò6F6‚·ÐÐ¢ÐÐ¢G'’²v–æF÷ræÆö6Å7F÷&vRç&VÖ÷fT—FVÒ‚vFVW544&÷fVBr“²Ò6F6‚·ÐÐ¢ÆWB66÷VçD77&bÒrs°Ð¢ÆWB7W'&VçD66÷VçBÒçVÆÃ°Ð¢6öç7B6W'f–6W2Ò°Ð¢²trÂtF†"6W'f–6W2rÂtFG&W72÷WFFRwV–Fæ6RÂ6&BF÷væÆöBæB&–çF–ærâuÒÀÐ¢²t"rÂt&—'F‚6W'F–f–6FRrÂtÆ–6F–öâwV–Fæ6RæBFö7VÖVçB&W&F–öââuÒÀÐ¢²t2rÂt67FR6W'F–f–6FRrÂt6†V6¶Æ—7BwV–Fæ6RæBÆ–6F–öâ7W÷'BâuÒÀÐ¢²tBrÂtG&—f–ærÆ–6Væ6RrÂtÆV&æW"÷"G&—f–ærÆ–6Væ6RÆ–6F–öâ76—7Fæ6RâuÒÀÐ¢²tRrÂtRÕ6‡&ÒbVGV6F–öârÂtRÕ6‡&ÒÂFÖ—76–öâæB66†öÆ'6†—f÷&×2âuÒÀÐ¢²tbrÂtfF†W"F†"6&BrÂuWÆöB6ÆV"–ÖvR÷"DböbF†RfF†W"F†"6&BâuÒÀÐ¢²tbrÂtfÖ–Ç’”Bb&F–öâ6&BrÂtfÖ–Ç’æB&F–öâ6&BÆ–6F–öâ7W÷'BâuÒÀÐ¢²trrÂtv÷fW&æÖVçB¦ö"f÷&×2rÂu&V7'V—FÖVçBf÷&×2ÂFÖ—B6&G2æB&–çF÷WG2âuÒÀÐ¢²t‚rÂt†VÇF‚bvVÆf&R6&G2rÂt†VÇF‚66†VÖRæBvVÆf&RÆ–6F–öâwV–Fæ6RâuÒÀÐ¢²t’rÂt–æ6öÖR6W'F–f–6FRrÂt–æ6öÖR6W'F–f–6FRÆ–6F–öâwV–Fæ6RâuÒÀÐ¢²t’rÂt•E"f–Æ–ærrÂt–æ6öÖRF‚&WGW&âf÷&Ò76—7Fæ6RâuÒÀÐ¢²t¢rÂt¦Ö&æF’„g&öçBò&6²’rÂuWÆöB6ÆV"†÷Föw&‡2öb&÷F‚g&öçBæB&6²vW2âuÒÀÐ¢²t²rÂtµ”276—7Fæ6RrÂtµ”2f÷&×2æB7W÷'F–ærFö7VÖVçB&W&F–öââuÒÀÐ¢²tÂrÂtÆæB&V6÷&G2rÂtÆæB&V6÷&B&–çBæB&VÆFVBÆ–6F–öâwV–Fæ6RâuÒÀÐ¢²tÒrÂtÖ'&–vR6W'F–f–6FRrÂtÆ–6F–öâ6†V6¶Æ—7BæBFö7VÖVçB&W&F–öââuÒÀÐ¢²tÒrÂtÖ÷F†W"F†"6&BrÂuWÆöB6ÆV"–ÖvR÷"DböbF†RÖ÷F†W"F†"6&BâuÒÀÐ¢²târÂtäô2b6÷'&V7F–öç2rÂtäô2ÂæÖR6÷'&V7F–öâæBf÷&Ò76—7Fæ6RâuÒÀÐ¢²tòrÂtöæÆ–æRf÷&×2rÂu&Vv—7G&F–öç2ÂÆ–6F–öâf÷&×2æB÷'FÂWÆöG2âuÒÀÐ¢²urÂuâ6&BrÂuâÆ–6F–öâwV–Fæ6RæBFö7VÖVçB&W&F–öââuÒÀÐ¢²urÂu†÷FòrÂuWÆöB6ÆV"&V6VçBÆ–6çB†÷FòâuÒÀÐ¢²urÂu77÷'BrÂu77÷'Bö–çFÖVçBæBFö7VÖVçBwV–Fæ6RâuÒÀÐ¢²urÂuV–6²&–çBb66ârÂtFö7VÖVçB66ææ–ærÂ&–çBæBf–ÆR&W&F–öââuÒÀÐ¢²u"rÂu&W6–FVçB6W'F–f–6FRrÂu&W6–FVæ6RæBFöÖ–6–ÆRÆ–6F–öâ76—7Fæ6RâuÒÀÐ¢²u2rÂu66†öÆ'6†—b7GVFVçBrÂu66†öÆ'6†—ÂW†ÒæB7GVFVçBf÷&Ò7W÷'BâuÒÀÐ¢²u2rÂu6–væGW&RrÂuWÆöB6ÆV"6–væGW&R–ÖvR÷"6–væVBvRâuÒÀÐ¢²uBrÂuG—–ærbG&ç6ÆF–öârÂuVæ¦&’Â†–æF’æBVævÆ—6‚G—–ær7W÷'BâuÒÀÐ¢²uRrÂuTD”B6&BrÂtF—6&–Æ—G’”B6&BÆ–6F–öâwV–Fæ6RâuÒÀÐ¢²ubrÂuf÷FW"6&BrÂuf÷FW"6&BÆ–6F–öâÂ6÷'&V7F–öâæB&–çB†VÇâuÒÀÐ¢²urrÂuvVÆf&R66†VÖW2rÂtv÷fW&æÖVçBvVÆf&Rf÷&ÒæBVÆ–v–&–Æ—G’wV–Fæ6RâuÒÀÐ¢²u‚rÂu†W&÷‚ò†÷Fö6÷’rÂt&Æ6²æBv†—FR÷"6öÆ÷W"†÷Fö6÷’6W'f–6RâuÒÀÐ¢²u’rÂu–÷WF‚6W'f–6W2rÂu–÷WF‚&Vv—7G&F–öç2æB7GVFVçBÆ–6F–öç2âuÒÀÐ¢²u¢rÂu¦—ÂWÆöBbf–ÆR†VÇrÂtf–ÆR6ö×&W76–öâÂ66ææ–æræBF–v—FÂWÆöG2âuÒÀÐ¢²trÂtF†"FG&W72ò&æ²WFFRrÂtF†"FG&W72÷"&æ²FWF–ÂWFFR76—7Fæ6RâuÒÀÐ¢²trÂtF†"d26&B÷&FW"rÂt÷&FW"âF†"d26&BâuÒÀÐ¢²trÂt6†—'vB66†VÖRrÂuVæ¦"vVÆf&R66†VÖRÆ–6F–öâ76—7Fæ6RâuÒÀÐ¢²trÂt—W6†Öâ&†&Bò6V†B&–Ö6&BrÂt†VÇF‚66†VÖR6&BÆ–6F–öâ7W÷'BâuÒÀÐ¢²trÂt$„†VÇF‚6&BrÂt$„†VÇF‚66÷VçB6&B76—7Fæ6RâuÒÀÐ¢²t"rÂt'VF†Vç6–öârÂtöÆBvRVç6–öâÆ–6F–öâ76—7Fæ6RâuÒÀÐ¢²t"rÂt&—'F‚òFVF‚6W'F–f–6FRrÂt&—'F‚÷"FVF‚6W'F–f–6FRÆ–6F–öâ7W÷'BâuÒÀÐ¢²tBrÂtDÂ&VæWvÂòFG&W726†ævRrÂtG&—f–ærÆ–6Væ6R&VæWvÂ÷"FG&W726†ævRâuÒÀÐ¢²tBrÂtF—g–ærVç6–öârÂtF—6&–Æ—G’Vç6–öâÆ–6F–öâ7W÷'BâuÒÀÐ¢²tRrÂtRÕ6‡&Ò6&BrÂtRÕ6‡&Ò&Vv—7G&F–öâ76—7Fæ6RâuÒÀÐ¢²tRrÂtVÆV7G&–6—G’òvFW"&–ÆÂ–ÖVçBrÂtöæÆ–æRWF–Æ—G’&–ÆÂ–ÖVçB76—7Fæ6RâuÒÀÐ¢²trrÂtv÷fW&æÖVçB¦ö"f÷&×2…542òU42ò554"’rÂu&V7'V—FÖVçBÆ–6F–öç2f÷"v÷fW&æÖVçB¦ö'2âuÒÀÐ¢²t‚rÂt…5%çVÖ&W"ÆFRrÂt†–v‚6V7W&—G’&Vv—7G&F–öâÆFR&öö¶–ær76—7Fæ6RâuÒÀÐ¢²t¢rÂt¦VWfâ&Öâ…Vç6–öâÆ–fR6W'F–f–6FR’rÂtF–v—FÂÆ–fR6W'F–f–6FR76—7Fæ6Rf÷"Vç6–öæW'2âuÒÀÐ¢²tÂrÂtÆV&æ–ærG&—f–ærÆ–6Væ6RrÂtÆV&æW"Æ–6Væ6RÆ–6F–öâ76—7Fæ6RâuÒÀÐ¢²urÂuÒÔ¶—6â6ÖÖâæ–F†’&Vv—7G&F–öârÂuÒÔ¶—6â&Vv—7G&F–öâæB6÷'&V7F–öâ76—7Fæ6RâuÒÀÐ¢²urÂuÒf—6‡v¶&ÖòFööÆ¶—B76—7Fæ6RrÂuÒf—6‡v¶&Ö&Vv—7G&F–öâ76—7Fæ6RâuÒÀÐ¢²urÂuW&ÖæVçBG&—f–ærÆ–6Væ6RrÂuW&ÖæVçBG&—f–ærÆ–6Væ6RÆ–6F–öâ76—7Fæ6RâuÒÀÐ¢²urÂu77÷'Bƒ3bvW2’rÂu&VwVÆ"3b×vR77÷'BÆ–6F–öâ76—7Fæ6RâuÒÀÐ¢²urÂu77÷'B…FF¶Â’rÂuFF¶Â77÷'BÆ–6F–öâ76—7Fæ6RâuÒÀÐ¢²urÂud26Ö'B6&B&–çF–ærrÂud2&–çBf÷"F†"Âf÷FW"”B÷"$2âuÒÀÐ¢²u"rÂu&F–öâ6&B„æWròFBÖVÖ&W"ò6÷'&V7F–öâ’rÂu&F–öâ6&BÆ–6F–öâæB6÷'&V7F–öâ7W÷'BâuÒÀÐ¢²u"rÂu'W&Âò&÷&FW"&V6W'F–f–6FRrÂu'W&Â÷"&÷&FW"&V6W'F–f–6FR76—7Fæ6RâuÒÀÐ¢²u2rÂu66†ööÂò6öÆÆVvRFÖ—76–öâb66†öÆ'6†—rÂtFÖ—76–öâæB66†öÆ'6†—f÷&Ò76—7Fæ6RâuÒÀÐ¢²u2rÂu6¶†’ò6†—'vB66†VÖRrÂuvVÆf&R66†VÖR&Vv—7G&F–öâ76—7Fæ6RâuÒÀÐ¢²ubrÂuf÷FW"6&B„æWrò6÷'&V7F–öâ’rÂtæWrf÷FW"”B÷"6÷'&V7F–öâ76—7Fæ6RâuÒÀÐ¢²urrÂuv–F÷rVç6–öârÂuv–F÷rVç6–öâÆ–6F–öâ7W÷'BâuÒÀÐ¢Ó°Ð¢òòfÇVW26÷–VBg&öÒF†R7W7FöÖW"w2†æGw&—GFVâ&FRæ÷FW2â&ævW2÷Væ6ÆV"F÷FÇ27F’W7F–ÖFW2àÐ¢6öç7BfVU&÷w2Ò°Ð¢¶æÖW3¥²uâ6&BrÂuâ6&B„æWrò6÷'&V7F–öâ’uÒÆv÷fW&æÖVçC¢~(+“r†æ÷FVB’rÆ6fS¢~(+“C(	>(+“rÇF÷FÃ¢~(+“#rÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²uf÷FW"6&BrÂuf÷FW"6&B„æWrò6÷'&V7F–öâ’uÒÆv÷fW&æÖVçC¢~(+“rÆ6fS¢~(+“3(	>(+“SrÇF÷FÃ¢~(+“rÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²tF†"FG&W72ò&æ²WFFRuÒÆv÷fW&æÖVçC¢~(+“SrÆ6fS¢~(+“3(	>(+“SrÇF÷FÃ¢~(+“SrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²tF†"d26&B÷&FW"uÒÆv÷fW&æÖVçC¢~(+“SrÆ6fS¢~(+“#(	>(+“SrÇF÷FÃ¢~(+“rÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²t—W6†Öâ&†&Bò6V†B&–Ö6&BuÒÆv÷fW&æÖVçC¢~(+“rÆ6fS¢~(+“#(	>(+“3rÇF÷FÃ¢~(+“ƒrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²tRÕ6‡&Ò6&BrÂt$„†VÇF‚6&BuÒÆv÷fW&æÖVçC¢~(+“rÆ6fS¢~(+“#(	>(+“CrÇF÷FÃ¢~(+“ƒrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²uTD”B6&BuÒÆv÷fW&æÖVçC¢~(+“rÆ6fS¢~(+“3(	>(+“SrÇF÷FÃ¢~(+“ƒrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²u77÷'Bƒ3bvW2’uÒÆv÷fW&æÖVçC¢~(+“ÃSrÆ6fS¢~(+“#(	>(+“3rÇF÷FÃ¢~(+“Ãs²rÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²u77÷'B…FF¶Â’uÒÆv÷fW&æÖVçC¢~(+“2ÃS†æ÷FVB’rÆ6fS¢~(+“S(	>(+“#rÇF÷FÃ¢~(+“2ÃcS(	>(+“2ÃsrÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²tÆV&æ–ærG&—f–ærÆ–6Væ6RuÒÆv÷fW&æÖVçC¢~(+“(	>(+“#rÆ6fS¢~(+“rÇF÷FÃ¢~(+“3†æ÷FVB’rÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²uW&ÖæVçBG&—f–ærÆ–6Væ6RuÒÆv÷fW&æÖVçC¢~(+“s(	>(+“ÃrÆ6fS¢~(+“#rÇF÷FÃ¢t6öæf—&ÒgFW"÷'FÂfVRrÆ6W'F–çG“¢v6öæf—&ÒwÒÀÐ¢¶æÖW3¥²tDÂ&VæWvÂòFG&W726†ævRuÒÆv÷fW&æÖVçC¢~(+“s(	>(+“ÃrÆ6fS¢~(+“#rÇF÷FÃ¢t6öæf—&ÒgFW"÷'FÂfVRrÆ6W'F–çG“¢v6öæf—&ÒwÒÀÐ¢¶æÖW3¥²t…5%çVÖ&W"ÆFRuÒÆv÷fW&æÖVçC¢~(+“C(	>(+“Ã#rÆ6fS¢~(+“#(	>(+“3rÇF÷FÃ¢t6öæf—&ÒgFW"÷'FÂfVRrÆ6W'F–çG“¢v6öæf—&ÒwÒÀÐ¢¶æÖW3¥²u&W6–FVçB6W'F–f–6FRuÒÆv÷fW&æÖVçC¢~(+“3^(	>(+“ƒR†æ÷FRVæ6ÆV"’rÆ6fS¢~(+“rÇF÷FÃ¢~(+“S(	>(+“#²rÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²t67FR6W'F–f–6FRuÒÆv÷fW&æÖVçC¢~(+“S(	>(+“sRrÆ6fS¢~(+“rÇF÷FÃ¢~(+“S²rÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²t–æ6öÖR6W'F–f–6FRuÒÆv÷fW&æÖVçC¢~(+“S^(	>(+“ƒRrÆ6fS¢~(+“rÇF÷FÃ¢~(+“S²rÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²u'W&Âò&÷&FW"&V6W'F–f–6FRuÒÆv÷fW&æÖVçC¢~(+“3(	>(+“rÆ6fS¢~(+“rÇF÷FÃ¢~(+“S²rÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²t&—'F‚òFVF‚6W'F–f–6FRrÂt&—'F‚6W'F–f–6FRuÒÆv÷fW&æÖVçC¢~(+“#(	>(+“SrÆ6fS¢~(+“rÇF÷FÃ¢~(+“SrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²uÒÔ¶—6â6ÖÖâæ–F†’&Vv—7G&F–öâuÒÆv÷fW&æÖVçC¢~(+“RrÆ6fS¢~(+“SrÇF÷FÃ¢~(+“rÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²uÒf—6‡v¶&ÖòFööÆ¶—B76—7Fæ6RuÒÆv÷fW&æÖVçC¢~(+“rÆ6fS¢~(+“SrÇF÷FÃ¢~(+“SrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²t'VF†Vç6–öâuÒÆv÷fW&æÖVçC¢~(+“rÆ6fS¢~(+“SrÇF÷FÃ¢~(+“SrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²uv–F÷rVç6–öârÂtF—g–ærVç6–öâuÒÆv÷fW&æÖVçC¢~(+“rÆ6fS¢~(+“SrÇF÷FÃ¢~(+“SrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²t¦VWfâ&Öâ…Vç6–öâÆ–fR6W'F–f–6FR’uÒÆv÷fW&æÖVçC¢~(+“S‡Væ6ÆV"’rÆ6fS¢~(+“rÇF÷FÃ¢~(+“SrÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²u&F–öâ6&B„æWròFBÖVÖ&W"ò6÷'&V7F–öâ’uÒÆv÷fW&æÖVçC¢~(+“3(	>(+“crÆ6fS¢~(+“rÇF÷FÃ¢~(+“SrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²u6¶†’ò6†—'vB66†VÖRrÂt6†—'vB66†VÖRuÒÆv÷fW&æÖVçC¢~(+“rÆ6fS¢~(+“ƒrÇF÷FÃ¢~(+“ƒrÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢¶æÖW3¥²tv÷fW&æÖVçB¦ö"f÷&×2rÂtv÷fW&æÖVçB¦ö"f÷&×2…542òU42ò554"’uÒÆv÷fW&æÖVçC¢~(+“S(	>(+“SrÆ6fS¢~(+“(	>(+“#rÇF÷FÃ¢~(+“#†æ÷FRVæ6ÆV"’rÆ6W'F–çG“¢vW7F–ÖFRwÒÀÐ¢¶æÖW3¥²u66†ööÂò6öÆÆVvRFÖ—76–öâb66†öÆ'6†—rÂu66†öÆ'6†—b7GVFVçBuÒÆv÷fW&æÖVçC¢tæ÷B6ÆV"–âæ÷FRrÆ6fS¢tæ÷B6ÆV"–âæ÷FRrÇF÷FÃ¢t6öæf—&Ò&Vf÷&R–ÖVçBrÆ6W'F–çG“¢v6öæf—&ÒwÒÀÐ¢¶æÖW3¥²t•E"f–Æ–æruÒÆv÷fW&æÖVçC¢~(+“3(	>(+“Ã†–æ6öÖR6Æ"’rÆ6fS¢tæ÷B6ÆV"–âæ÷FRrÇF÷FÃ¢t6öæf—&Ò&Vf÷&R–ÖVçBrÆ6W'F–çG“¢v6öæf—&ÒwÒÀÐ¢¶æÖW3¥²tVÆV7G&–6—G’òvFW"&–ÆÂ–ÖVçBuÒÆv÷fW&æÖVçC¢~(+“3(	>(+“S†æ÷FRVæ6ÆV"’rÆ6fS¢tæ÷B6ÆV"–âæ÷FRrÇF÷FÃ¢t6öæf—&Ò&Vf÷&R–ÖVçBrÆ6W'F–çG“¢v6öæf—&ÒwÒÀÐ¢¶æÖW3¥²ud26Ö'B6&B&–çF–æruÒÆv÷fW&æÖVçC¢~(+“3(	>(+“SrÆ6fS¢~(+“SrÇF÷FÃ¢~(+“rÆ6W'F–çG“¢vÆ—7FVBwÒÀÐ¢Ó°Ð¢6öç7BfVTf÷#Ò‡6W'f–6R“ÓæfVU&÷w2æf–æB‚‡&÷r“Óç&÷rææÖW2æ–æ6ÇVFW2‡6W'f–6R’“°Ð¢6öç7B&WFö2Ò†æÖRÂ7FGW2ÒtÖæFF÷'’rÂWÆöBÒG'VRÂÆ–Ö—G2Ò·Ò’Óâ‡¶æÖRÇ7FGW2ÇWÆöBÆf–ÆU&WV—&VC¦Æ–Ö—G2æf–ÆU&WV—&VCóò‡WÆöBbg7FGW3ÓÓÒtÖæFF÷'’r’ÆÖ–ä'—FW3¦Æ–Ö—G2æÖ–ä´#öÆ–Ö—G2æÖ–ä´"£#C£ÆÖ„'—FW3¦Æ–Ö—G2æÖ„´#öÆ–Ö—G2æÖ„´"£#C££#B£#GÒ“°Ð¢6öç7B&WV—&VÖVçG4f÷"Ò‡6W'f–6RÂf&–çBÒrr’Óâ°Ð¢6öç7BæÖS×6W'f–6RçFôÆ÷vW$66R‚’Æ¶–æC×f&–çBçFôÆ÷vW$66R‚“°Ð¢6öç7Böff–6–ÃÒ†Fö7VÖVçG2Ç6÷W&6RÇ6÷W&6TÆ&VÂÆæ÷FSÒrr“Óâ‡¶Fö7VÖVçG2Ç6÷W&6RÇ6÷W&6TÆ&VÂÆæ÷FRÇfW&–f–VC§G'VWÒ“°Ð¢6öç7B6öæF—F–öæÃÒ†Fö7VÖVçG2Ç6÷W&6RÇ6÷W&6TÆ&VÂÆæ÷FR“Óâ‡¶Fö7VÖVçG2Ç6÷W&6RÇ6÷W&6TÆ&VÂÆæ÷FRÇfW&–f–VC¦fÇ6WÒ“°Ð¢–b†æÖRæ–æ6ÇVFW2‚vfF†W"F†"r—ÇÆæÖRæ–æ6ÇVFW2‚vÖ÷F†W"F†"r’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tfÖ–Ç’ÖVÖ&W.(	—2F†"6÷’(	BöæÇ’–bF†BW'6öâw&VW2æBF†—2'F–7VÆ"6W'f–6RæVVG2—BrÂt6öç6VçBf—'7Br’Ç&WFö2‚tF†"ÖÆ–æ¶VBÖö&–ÆRõE(	BVçFW&VBBF†Röff–6–Â÷'FÂÂæWfW"6†&RF†RõE†W&RrÂu÷'FÂ7FWrÆfÇ6R•ÒÂv‡GG3¢ò÷V–F’æv÷bæ–âöVâ÷WFF–ærÖFFÖöâÖF†"rÂuT”D’WFFRwV–Fæ6RrÂuF†—2—27W7FöÖW"&WVW7BFò†æFÆRfÖ–Ç’ÖVÖ&W.(	—26÷’Âæ÷Bv÷fW&æÖVçB6W'f–6R&WV—&VÖVçBâvWBF†RW'6öî(	—26öç6VçBf—'7C²F†"—26Vç6—F—fRW'6öæÂ–æf÷&ÖF–öââr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v67FRr’—°Ð¢–b†¶–æBæ–æ6ÇVFW2‚vvVæW&Âr’—&WGW&âöff–6–Â…·&WFö2‚tF†"ò–FVçF—G’&ööbr’Ç&WFö2‚uGvò&W6–FVæ6R&öög2†2Æ—7FVBöâF†RVæ¦"vVæW&Â67FRf÷&Ò’r’Ç&WFö2‚u6VÆbÖFV6Æ&F–öâr’Ç&WFö2‚uGv&’æBæÖ&&F"ò6'æ6‚òÔ2&W÷'Br•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##óRô—77Væ6RÖöbÔ67FRÔ6W'F–f–6FRÔvVæW&ÂçFbrÂuVæ¦"vVæW&Â67FR6W'F–f–6FRf÷&ÒrÂuF†Rf÷&Ò—2öÆFW"â6öæf—&ÒF†RÆFW7B6†V6¶Æ—7B–â6öææV7BVæ¦"&Vf÷&Rf–Æ–ærâr“°Ð¢–b†¶–æBæ–æ6ÇVFW2‚v&2r—ÇÆ¶–æBæ–æ6ÇVFW2‚vö&2r’—&WGW&âöff–6–Â…·&WFö2‚u&W6–FVæ6R&ööb(	BöæR66WFVBFö7VÖVçBr’Ç&WFö2‚u6VÆbÖFV6Æ&F–öâr’Ç&WFö2‚tFFRÖöbÖ&—'F‚&ööbr’Ç&WFö2‚t–FVçF—G’&ööbr’Ç&WFö2‚tfF†W"ò'&÷F†W"ò6—7FW"67FR6W'F–f–6FRÂ–bF†R&VÆWfçBf÷&Òç7vW"—2(	Å–W>(	ÒrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##2óRô67FRÔ6W'F–f–6FRÔ$2Ôô$2×c"ãÒçFbrÂuVæ¦"$2ôô$267FR6W'F–f–6FRf÷&ÒrÂufW&–f–6F–öâ&W÷'B—2Æ—7FVB2÷F–öæÂöâF†—2f÷&Òâr“°Ð¢&WGW&âöff–6–Â…·&WFö2‚u&W6–FVæ6R&ööb(	BöæR66WFVBFö7VÖVçBr’Ç&WFö2‚u6VÆbÖFV6Æ&F–öâr’Ç&WFö2‚tFFRÖöbÖ&—'F‚&ööbr’Ç&WFö2‚t–FVçF—G’&ööbr’Ç&WFö2‚tfF†W"ò'&÷F†W"ò6—7FW"67FR6W'F–f–6FRÂ–bÆ–6&ÆRrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##Ró’ô67FRÖ6W'F–f–6FRÕ42çFbrÂuVæ¦"4267FR6W'F–f–6FRf÷&ÒrÂu6VÆV7B$2ôô$2÷"vVæW&Â&÷fR–bF†B—2F†RÆ–6çB6FVv÷'’âr“°Ð¢ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚v–æ6öÖRr’—&WGW&âöff–6–Â…·&WFö2‚töæR–FVçF—G’Ö7VÒ×&W6–FVæ6R&ööc¢F†"ÂG&—f–ærÆ–6Væ6RÂ77÷'BÂf÷FW"”B÷"v÷fW&æÖVçB”Br’Ç&WFö2‚u6VÆbÖFV6Æ&F–öâr’Ç&WFö2‚ufW&–f–6F–öâ&W÷'Br’Ç&WFö2‚t–æ6öÖR&ööbg&öÒÆÂ6÷W&6W2r•ÒÂv‡GG3¢òöW6W'f–6W2çVæ¦"æv÷bæ–â÷&W6÷W&6W2ö†öÖUvRó2÷6÷ô–æ6öÖUö&÷WE÷6W'f–6Ræ‡FÖÂrÂuVæ¦"U6W'f–6W2–æ6öÖR6W'F–f–6FRwV–FRrÂuF†R7W'&VçBU6W'f–6W2vRÆ—7G2–æ6öÖR&ööb2ÖæFF÷'’âF†RÆ–6çN(	—2–æ6öÖR66RFWFW&Ö–æW2v†–6‚&V6÷&G2&R&VÆWfçBâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚w&W6–FVçBr—ÇÆæÖRæ–æ6ÇVFW2‚vFöÖ–6–ÆRr’—¶6öç7BFö73Õ·&WFö2‚töæR66WFVB–FVçF—G’Ö7VÒÖFG&W72&ööbr’Ç&WFö2‚u6VÆbÖFV6Æ&F–öâæBfW&–f–6F–öâ&W÷'Bg&öÒF†RWF†÷&—G’7V6–f–VBöâF†RVæ¦"f÷&Òr•Ó¶–b†¶–æCÓÓÒw&÷W'G’r–Fö72çW6‚‡&WFö2‚tf&Bò6ÆRFVVBf÷"F†RVæ¦"–ÖÖ÷f&ÆR×&÷W'G’6FVv÷'’r’“¶VÇ6R–b†¶–æCÓÓÒv&÷&âr–Fö72çW6‚‡&WFö2‚t&—'F‡Æ6R&ööbf÷"F†RVæ¦"Ö&÷&â6FVv÷'’r’“¶VÇ6W¶Fö72çW6‚‡&WFö2‚tf&Bò6ÆRFVVBÂ–bÇ––ærVæFW"F†R–ÖÖ÷f&ÆR×&÷W'G’6FVv÷'’rÂt6öæF—F–öæÂr’“¶Fö72çW6‚‡&WFö2‚t&—'F‡Æ6R&ööbÂ–bÇ––ærVæFW"F†RVæ¦"Ö&÷&â6FVv÷'’rÂt6öæF—F–öæÂr’—×&WGW&âöff–6–Â†Fö72Âv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##RóBõ&W6–FVæ6RÔ6W'F–f–6FRçFbrÂuVæ¦"&W6–FVæ6R6W'F–f–6FRf÷&ÒrÂt6FVv÷'’×7V6–f–2&ööbÆ–W2öæÇ’v†VâF†B&W6–FVæ6R6FVv÷'’—26VÆV7FVBâr“·ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚v&÷&FW"&Vr’bf¶–æCÓÓÒv&÷&FW"r—&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7B&÷&FW"Ö&V6W'F–f–6FRf÷&ÒæBÆ–6çBVÆ–v–&–Æ—G’&6—2rÂt6öæf—&Òv—F‚Væ¦"6öææV7BrÆfÇ6R’Ç&WFö2‚t–FVçF—G’öFG&W72æBÆö6ÂfW&–f–6F–öâ&ööb6†÷vâf÷"F†R6VÆV7FVB6W'F–f–6FRrÂt66RÖFWVæFVçBr•ÒÂv‡GG3¢òö6öææV7BçVæ¦"æv÷bæ–âòrÂuVæ¦"6öææV7B÷'FÂrÂuF†R'W&Â&V6W'F–f–6FRÆ—7B—26W&FS²Fòæ÷B&WW6R—B2&÷&FW"Ö&V6†V6¶Æ—7Bâ6öæf—&ÒF†R&÷&FW"&Vf÷&Òf—'7Bâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚w'W&Âr’bb‚æÖRæ–æ6ÇVFW2‚v&÷&FW"&Vr—ÇÆ¶–æCÓÓÒw'W&Âr’—&WGW&âöff–6–Â…·&WFö2‚t&VæVf–6–'’–FVçF—G’&ööb(	BöæR66WFVB—FVÒr’Ç&WFö2‚t&VæVf–6–'’FG&W72&ööb(	BöæR66WFVB—FVÒr’Ç&WFö2‚ufW&–f–6F–öâÆVb'’6'æ6‚òæÖ&&F"æBæ6†–B6V7&WF'’r’Ç&WFö2‚u6VÆbÖGFW7FVBÆ—fR†÷Fò6GW&VBGW&–ær7V&Ö—76–öârÂu÷'FÂ7FWrÆfÇ6R•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##Ró’õ'W&ÂÔ&VÔ6W'F–f–6FRÕ6W'f–6RÔFWF–Ç2çFbrÂuVæ¦"'W&Â&V6W'F–f–6FR6W'f–6RFWF–Ç2rÂuF†—2Æ—7B—2fW&–f–VBf÷"F†R'W&Â&V6W'F–f–6FR6W'f–6Râr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v&÷&FW"&Vr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚t6†ö÷6R'W&Â&V÷"&÷&FW"&V6W'F–f–6FRFòf–Wr—G26W&FR6†V6¶Æ—7BrÂt6†ö÷6RÆ–6F–öâG—RrÆfÇ6R•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âöf÷&×2òrÂuVæ¦"v÷fW&æÖVçBf÷&×2–æFW‚rÂuVæ¦"V&Æ—6†W26W&FR6W'F–f–6FRf÷&×3²Fòæ÷B&WW6RF†R'W&Â&VÆ—7B2F†R&÷&FW"&V6†V6¶Æ—7Bâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v&—'F‚r—ÇÆæÖRæ–æ6ÇVFW2‚vFVF‚r’—°Ð¢6öç7B—4FVFƒÖ¶–æBæ–æ6ÇVFW2‚vFVF‚r“°Ð¢–b†¶–æBæ–æ6ÇVFW2‚v6÷'&V7F–öâr’—&WGW&âöff–6–Â…·&WFö2‚tÆ–6çB–FVçF—G’Ö7VÒ×&W6–FVæ6R&ööbr’Ç&WFö2†W†—7F–ærG¶—4FVFƒòvFVF‚s¢v&—'F‚wÒ6W'F–f–6FV’Ç&WFö2‚u6VÆbÖFV6Æ&F–öâW‡Æ–æ–ærF†R6÷'&V7F–öâr’Ç&WFö2‚u7FFVÖVçG2÷&W÷'G2g&öÒGvò7&VF–&ÆRv—FæW76W2r’Ç&WFö2‚tFV6V6VBò6†–ÆB–FVçF—G’÷"7W÷'F–ær&V6÷&B&VÆWfçBFòF†R6÷'&V7F–öârÂt6öæF—F–öæÂr’Ç&WFö2‚uöÆ–6Rò÷7BÖÖ÷'FVÒ&V6÷&Bf÷"66–FVçFÂÂ7V–6–FR÷"7&–Ö–æÂFVF‚öæÇ’rÂt6öæF—F–öæÂr•ÒÆ—4FVFƒòv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##óRô6÷'&V7F–öâÖ–âÔFVF‚Ô6W'F–f–6FR×bÓ"ãçFbs¢v‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##óRô6÷'&V7F–öâÖ–âÔ&—'F‚Ô6W'F–f–6FR×bÓ"ãçFbrÆVæ¦"G¶—4FVFƒòtFVF‚s¢t&—'F‚wÒ6W'F–f–6FR6÷'&V7F–öâf÷&ÖÂt&—'F‚æBFVF‚6÷'&V7F–öç2W6R6W&FRf÷&×2â6²F†R6†÷Fò6öæf—&ÒF†R6÷'&V7B&Vv—7G&"&ö6W72&Vf÷&RÇ––ærâr“°Ð¢–b†¶–æBæ–æ6ÇVFW2‚w&Vv—7G&F–öâr’—&WGW&â6öæF—F–öæÂ…·&WFö2†W†7BG¶—4FVFƒòvFVF‚s¢v&—'F‚wÒÆFR×&Vv—7G&F–öâf÷&ÒæBÆö6Â&Vv—7G&"ò6ö×WFVçBÖWF†÷&—G’÷&FW"f÷"F†RWfVçBFVÆ–Âu&WV—&VBFò–FVçF–g’F†—266RrÆfÇ6R’Ç&WFö2†G¶—4FVFƒòtFVF‚s¢t&—'F‚wÒWfVçBWf–FVæ6R&WVW7FVB'’F†RÆö6Â&Vv—7G&&Ât66RÖFWVæFVçBr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âöf÷&×2òrÂuVæ¦"†VÇF‚FW'FÖVçB&—'F‚öFVF‚f÷&Ò–æFW‚rÂuVæ¦"V&Æ—6†W26W&FRÆFRÖVçG'’f÷&×2âF†R&WV—&VB÷&FW"æB&ööbFWVæBöâF†RWfVçBFFRæB&Vv—7G&"FV6—6–öã²6öæf—&ÒF†Bf÷&Ò&Vf÷&R6¶–ærf÷"66ç2âr“°Ð¢&WGW&âöff–6–Â…·&WFö2‚tÆ–6çB–FVçF—G’Ö7VÒ×&W6–FVæ6R&ööbr’Ç&WFö2†W†—7F–ærG¶—4FVFƒòvFVF‚s¢v&—'F‚wÒ6W'F–f–6FRÂ–b&WVW7F–ær6÷’æBöæR—2f–Æ&ÆVÂt6öæF—F–öæÂr’Ç&WFö2†G¶—4FVFƒòtFV6V6VBW'6öî(	—2s¢t6†–ÆN(	—2wÒWfVçBò–FVçF—G’&V6÷&BÂ–bF†R&Vv—7G&"6·2f÷"—FÂt6öæF—F–öæÂr’Ç&WFö2‚tÆFR×&Vv—7G&F–öâ÷&FW"òæöâÖf–Æ&–Æ—G’6W'F–f–6FRÂ–bF†RFVÆ’&WV—&W2—BrÂt6öæF—F–öæÂr•ÒÆ—4FVFƒòv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##óRô—77Væ6RÖöbÔ6÷’ÖöbÔFVF‚Ô6W'F–f–6FRÖ÷"ÔæöâÔf–Æ&–Æ—G’Ô6W'F–f–6FWc"ãçFbs¢v‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##óRô—77Væ6RÖöbÔ6÷’ÖöbÔ&—'F‚Ô6W'F–f–6FRÖ÷"ÔæöâÔf–Æ&–Æ—G’Ô6W'F–f–6FR×bÓ"ãçFbrÂuVæ¦"&—'F‚òFVF‚6÷’æBæöâÔf–Æ&–Æ—G’f÷&×2rÂtæWr&Vv—7G&F–öâÂ6÷’ÂÆFR&Vv—7G&F–öâæB6÷'&V7F–öâ&RF–ffW&VçB&ö6W76W2â6VÆV7BF†R&–v‡B66RæB6öæf—&Òv—F‚F†RÆö6Â&Vv—7G&"âr“°Ð¢ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚vÖ'&–vRr’—&WGW&âöff–6–Â…·&WFö2‚t'&–FRæBw&ööÒ–FVçF—G’&ööbr’Ç&WFö2‚t'&–FRæBw&ööÒFG&W72&ööbr’Ç&WFö2‚t'&–FRæBw&ööÒFFRÖöbÖ&—'F‚&ööbr’Ç&WFö2‚tÖ'&–vRfVçVR6W'F–f–6FRõ"wW'VGv&6W'F–f–6FRf÷"ææBÖ'&–vR&Vv—7G&F–öâr’Ç&WFö2‚uvVFF–ær6&BæBvVFF–ær†÷Föw&‡2r’Ç&WFö2‚t–FVçF—G’&ööböbGvòv—FæW76W2g&öÒF†Rw&ööÞ(	—26–FRr’Ç&WFö2‚t–FVçF—G’&ööböbGvòv—FæW76W2g&öÒF†R'&–F^(	—26–FRr’Ç&WFö2‚tF—f÷&6RFV7&VRòf÷&ÖW"7÷W6RFVF‚6W'F–f–6FRÂ–bÆ–6&ÆRrÂt6öæF—F–öæÂr’Ç&WFö2‚u77÷'Bf÷"âå$’Æ–6çBÂ–bÆ–6&ÆRrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##2ó"ôÖ'&–vRÕ&Vv—7G&F–öâÒçFbrÂuVæ¦"Ö'&–vR&Vv—7G&F–öâf÷&ÒrÂuF†RVæ¦"f÷&Ò6—266ç26†÷VÆB&RÖFRg&öÒ÷&–v–æÂFö7VÖVçG2âF†RÖ'&–vRÖÆr&÷WFRffV7G2v†–6‚fVçVR6W'F–f–6FR—266WFVBâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚vF†"f2r’—&WGW&âöff–6–Â…·&WFö2‚tF†"çVÖ&W"æB66W72FòF†R&Vv—7FW&VBÖö&–ÆRf÷"õErÂu÷'FÂ7FWrÆfÇ6R•ÒÂv‡GG3¢ò÷V–F’æv÷bæ–âöVâö×’ÖF†"övWBÖF†"æ‡FÖÂrÂuT”D’F†"6W'f–6W2rÂuT”D’d2÷&FW"W6W2F†"FWF–Ç2æB÷'FÂfW&–f–6F–öã²Fòæ÷BWÆöBâF†"6÷’†W&RVæÆW72F†R7W7FöÖW"W‡&W76Ç’6†ö÷6W2Fò6†&R—Bâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚vF†"r’bf¶–æCÓÓÒv&æ²r—&WGW&â6öæF—F–öæÂ…·&WFö2‚u&V6V—f–ær&æ¾(	—2F†"×6VVF–æròµ”2&WVW7BrÂu&WV—&VBFò–FVçF–g’F†—2&WVW7BrÆfÇ6R’Ç&WFö2‚töæÇ’F†R&öög2F†R&æ²6·2f÷"rÂt&æ²×7V6–f–2rÆfÇ6R•ÒÂv‡GG3¢ò÷wwrç&&’æ÷&ræ–âòrÂu$$’7W7FöÖW"µ”2wV–Fæ6RrÂt&æ²66÷VçB6VVF–ær—2&æ²òå4’&ö6W72Âæ÷BâF†"FVÖöw&†–2WFFRâW6RF†R7W7FöÖW.(	—2÷vâ&æ²6†ææVÃ²æWfW"&WVW7B”âÂ77v÷&B÷"õEâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚vF†"r’—&WGW&âöff–6–Â…·&WFö2‚töæR&ööb66WFVBf÷"F†Rf–VÆB&V–ær6†ævVB†–FVçF—G’ÂFG&W72ÂFFRöb&—'F‚÷"&VÆF–öç6†—&ööb’rÂt6†ö÷6R66÷&F–ærFòWFFRr’Ç&WFö2‚tW†—7F–ærF†"FWF–Ç2æBF†"ÖÆ–æ¶VBÖö&–ÆRf÷"õEÂ–bF†Röff–6–ÂfÆ÷rW6W2õErÂu÷'FÂ7FWrÆfÇ6R•ÒÂv‡GG3¢ò÷V–F’æv÷bæ–âö–ÖvW2ö6öÖÖFö2ôÆ—7Eööeõ7W÷'F–æuôFö7VÖVçEöf÷%ôF†%ôVç&öÆÖVçEöæEõWFFRçFbrÂuT”D’66WFVB7W÷'F–ærÖFö7VÖVçBÆ—7BrÂuF†W&R—2æò6–ævÆRFö7VÖVçBf÷"WfW'’F†"6†ævRâ&æ²Ö66÷VçB6VVF–ær—26W&FR&æ²òå4’&ö6W72Âæ÷BâF†"WFFS²—G2'VÆW2FWVæBöâF†R&æ²âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚wf÷FW"r’—°Ð¢–b†¶–æCÓÓÒw6†–gBr—&WGW&âöff–6–Â…·&WFö2‚u&ööböbæWr÷&F–æ'’&W6–FVæ6Rr’Ç&WFö2‚tW†—7F–ærU”2òf÷FW"FWF–Ç2r’Ç&WFö2‚tF†"çVÖ&W"–bf–Æ&ÆS²F†Rf÷&ÒW&Ö—G2–æF–6F–ærF†BF†"—2æ÷Bf–Æ&ÆRrÂt6öæF—F–öæÂrÆfÇ6R•ÒÂv‡GG3¢ò÷f÷FW'2æV6’æv÷bæ–âöwV–FVÆ–æW2ôf÷&ÒÓ…öVâçFbrÂtVÆV7F–öâ6öÖÖ—76–öâf÷&Ò‚wV–FVÆ–æW2rÂtf÷"6†–gF–ær&W6–FVæ6RÂ7V&Ö—BF†Rf÷&Ò‚FG&W72×6†–gB6V7F–öâæB&ööböbF†RæWrFG&W72âr“°Ð¢–b†¶–æCÓÓÒw&WÆ6VÖVçBr—&WGW&âöff–6–Â…·&WFö2‚tW†—7F–ærU”2òf÷FW"FWF–Ç2r’Ç&WFö2‚töÆBU”2Fò&WGW&âÂ–bFÖvVC²öÆ–6R&W÷'Bòd•"–bÆ÷7BÂ2Æ–6&ÆRr•ÒÂv‡GG3¢ò÷f÷FW'2æV6’æv÷bæ–âöwV–FVÆ–æW2ôf÷&ÒÓ…öVâçFbrÂtVÆV7F–öâ6öÖÖ—76–öâf÷&Ò‚wV–FVÆ–æW2rÂu&WÆ6VÖVçB&ööbFWVæG2öâv†WF†W"F†RöÆBU”2—2FÖvVB÷"Æ÷7Bâr“°Ð¢–b†¶–æCÓÓÒw†÷Fòr—&WGW&âöff–6–Â…·&WFö2‚u&V6VçB77÷'B×6—¦R6öÆ÷W"†÷Fòf÷"F†R†÷FòÖ6†ævR&WVW7Br’Ç&WFö2‚tW†—7F–ærU”2òf÷FW"FWF–Ç2r•ÒÂv‡GG3¢ò÷f÷FW'2æV6’æv÷bæ–âöwV–FVÆ–æW2ôf÷&ÒÓ…öVâçFbrÂtVÆV7F–öâ6öÖÖ—76–öâf÷&Ò‚wV–FVÆ–æW2rÂuW6Rf÷&Ò‚f÷"F†R6÷'&V7F–öâ÷WFFR&WVW7BæBWÆöBöæÇ’F†R6†ævVBÖf–VÆB&ööbF†Rf÷&Ò6·2f÷"âr“°Ð¢–b†¶–æCÓÓÒv6÷'&V7F–öâr—&WGW&âöff–6–Â…·&WFö2‚u&ööb7W÷'F–ærF†RW†7B6÷'&V7FVBf÷FW"VçG'’r’Ç&WFö2‚tW†—7F–ærU”2òf÷FW"FWF–Ç2r’Ç&WFö2‚tF†"çVÖ&W"–bf–Æ&ÆS²F†Rf÷&ÒW&Ö—G2–æF–6F–ærF†BF†"—2æ÷Bf–Æ&ÆRrÂt6öæF—F–öæÂrÆfÇ6R•ÒÂv‡GG3¢ò÷f÷FW'2æV6’æv÷bæ–âöwV–FVÆ–æW2ôf÷&ÒÓ…öVâçFbrÂtVÆV7F–öâ6öÖÖ—76–öâf÷&Ò‚wV–FVÆ–æW2rÂtöæÇ’GF6‚&ööb&VÆWfçBFòF†R6VÆV7FVB6÷'&V7FVBVçG'’âr“°Ð¢&WGW&âöff–6–Â…·&WFö2‚u&V6VçB77÷'B×6—¦R6öÆ÷W"†÷Fòv—F‚v†—FR&6¶w&÷VæBr’Ç&WFö2‚töæR66WFVBvR&ööbÂf÷"Æ–6çG2–âF†RvR×&ööb6FVv÷'’rÂt6öæF—F–öæÂr’Ç&WFö2‚töæR66WFVB&ööböb÷&F–æ'’&W6–FVæ6Rr’Ç&WFö2‚tF†"çVÖ&W"–bf–Æ&ÆS²F†Rf÷&ÒW&Ö—G2–æF–6F–ærF†BF†"—2æ÷Bf–Æ&ÆRrÂt6öæF—F–öæÂrÆfÇ6R•ÒÂv‡GG3¢ò÷f÷FW'2æV6’æv÷bæ–âöwV–FVÆ–æW2ôf÷&ÒÓeöVâçFbrÂtVÆV7F–öâ6öÖÖ—76–öâf÷&ÒbwV–FVÆ–æW2rÂtf÷"6÷'&V7F–öâöFG&W726†–gBÂ6†ö÷6Rf÷&Ò‚÷F–öâ&÷fRâF†"—2æ÷BVæ—fW'6ÆÇ’ÖæFF÷'’âr“°Ð¢ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚w77÷'Br’—&WGW&â6öæF—F–öæÂ…·&WFö2‚u77÷'B6WfFö7VÖVçBGf—6÷"&W7VÇBf÷"F†—2Æ–6çN(	—2g&W6‚ò&V—77VRÂvRÂFF¶ÂæBæöâÔT5"6FVv÷'’rÂt6†ö÷6R66Rf—'7BrÆfÇ6R’Ç&WFö2‚u&öög2Æ—7FVB'’F†Röff–6–ÂGf—6÷"†–FVçF—G’öFG&W72öFFRöb&—'F‚2Æ–6&ÆR’rÂt66RÖFWVæFVçBr’Ç&WFö2‚töÆB77÷'BÂf÷"&V—77VRÂÇW2F†RFö7VÖVçG2&WVW7FVBf÷"F†R7V6–f–26†ævRrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢ò÷6W'f–6W3"ç77÷'F–æF–æv÷bæ–â÷7ôÆ—7DFö7VÖVçG2rÂu77÷'B6Wföff–6–ÂFö7VÖVçBÆ—7BrÂuF†Röff–6–Â6†V6¶Æ—7B6†ævW2v—F‚g&W6‚÷&V—77VRÂvRÂFF¶ÂæB÷F†W"W'6öæÂ6—&7V×7Fæ6W2âW6RF†RFö7VÖVçBGf—6÷"&Vf÷&R6öÆÆV7F–ær66ç2âr“°Ð¢–b†æÖSÓÓÒvG&—f–ærÆ–6Væ6Rrbf¶–æCÓÓÒvÆV&æW"wÇÆæÖRæ–æ6ÇVFW2‚vÆV&æ–ærG&—f–ærr’—&WGW&âöff–6–Â…·&WFö2‚töæR66WFVB&ööböbvRæBFG&W72†öæRFö7VÖVçBÖ’6÷fW"&÷F‚’r’Ç&WFö2‚tf÷&Ò‡—6–6ÂÖf—FæW726VÆbÖFV6Æ&F–öâr’Ç&WFö2‚u†÷Föw&‚f÷"F†RöæÆ–æRf÷&Òr’Ç&WFö2‚u&VçBòwV&F–âFV6Æ&F–öâÂ–bÆ–6çB—2Ö–æ÷"rÂt6öæF—F–öæÂr’Ç&WFö2‚tG&—f–ær×66†ööÂf÷&ÒRÂ–bF†R6VÆV7FVB6Æ72÷&ö6W726·2f÷"—BrÂt6öæF—F–öæÂr’Ç&WFö2‚tf÷&ÒöæÇ’v†W&RF†R6Æ72÷&ö6W72&WV—&W2ÖVF–6Â6W'F–f–6FRrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢òö×&—f†âç&—f†âæv÷bæ–âöFö72ôf÷&ÒÓ"çFbrÂu&—f†âf÷&Ò"Fö7VÖVçBÆ—7BrÂuF†Röff–6–Âf÷&ÒÆ—7G266WFVBvRöFG&W72&öög2æBÖ&·2÷F†W"Væ6Æ÷7W&W22Æ–6&ÆRâF†R6&F†’÷'FÂFV6–FW2F†RW†7B—FV×2f÷"F†RfV†–6ÆR6Æ72âr“°Ð¢–b†æÖSÓÓÒvG&—f–ærÆ–6Væ6Rrbf¶–æCÓÓÒwW&ÖæVçBwÇÆæÖRæ–æ6ÇVFW2‚wW&ÖæVçBG&—f–ærr’—&WGW&âöff–6–Â…·&WFö2‚ufÆ–BÆV&æW.(	—2Æ–6Væ6Rr’Ç&WFö2‚tf÷&Ò"Æ–6F–öâæBG&—f–ær×FW7BFWF–Ç2r’Ç&WFö2‚u†÷Föw&‚f÷"F†RöæÆ–æRf÷&Òr’Ç&WFö2‚tf÷&Òf—FæW72FV6Æ&F–öâòf÷&ÒÖVF–6Â6W'F–f–6FRv†W&RF†R6Æ72÷"vR&WV—&W2—BrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢òö×&—f†âç&—f†âæv÷bæ–âöFö72ôf÷&ÒÓ"çFbrÂu&—f†âf÷&Ò"Fö7VÖVçBÆ—7BrÂuF†RÆ–6Vç6–ær÷'FÂÖ’&WV—&RFW7B&öö¶–æræBFF—F–öæÂVæ6Æ÷7W&W2&6VBöâfV†–6ÆR6Æ72âr“°Ð¢–b†æÖSÓÓÒvG&—f–ærÆ–6Væ6Rrbf¶–æCÓÓÒvFG&W72r—&WGW&âöff–6–Â…·&WFö2‚tW†—7F–ærG&—f–ærÆ–6Væ6Rr’Ç&WFö2‚tf÷&Ò"6†ævRÖöbÖFG&W72Æ–6F–öâr’Ç&WFö2‚u&ööböbæWrFG&W72r’Ç&WFö2‚u†÷Föw&‚Â–bF†R6&F†’÷'FÂ6·2f÷"öæRrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢òö×&—f†âç&—f†âæv÷bæ–âöFö72ôf÷&ÒÓ"çFbrÂu&—f†âf÷&Ò"Fö7VÖVçBÆ—7BrÂuF†RÆ—fR6&F†’÷'FÂFV6–FW2v†WF†W"ç’FF—F–öæÂ&ööb—2æVVFVBf÷"F†—27FFRæBÆ–6F–öââr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚vFÂ&VæWvÂr—ÇÆæÖRæ–æ6ÇVFW2‚vG&—f–ærÆ–6Væ6Rr’—¶6öç7BFö73Õ·&WFö2‚tW†—7F–ærG&—f–ærÆ–6Væ6Rr’Ç&WFö2‚tf÷&Ò"&VæWvÂò6†ævRÆ–6F–öâr’Ç&WFö2‚u†÷Föw&‚f÷"F†RöæÆ–æRf÷&Òr•Ó¶–b†¶–æBÓÒvFG&W72r–Fö72çW6‚‡&WFö2‚tf÷&Ò‡—6–6ÂÖf—FæW726VÆbÖFV6Æ&F–öârÂtf÷"&VæWvÂr’“¶–b†¶–æBÓÒvFG&W72r–Fö72çW6‚‡&WFö2‚tf÷&ÒÖVF–6Â6W'F–f–6FRf÷"Æ–6çG2÷fW"C÷"G&ç7÷'BfV†–6ÆW2rÂt6öæF—F–öæÂr’“¶–b†¶–æCÓÓÒvFG&W72wÇÆ¶–æCÓÓÒv&÷F‚r–Fö72çW6‚‡&WFö2‚u&ööböbæWrFG&W72rÂt6öæF—F–öæÂr’“·&WGW&âöff–6–Â†Fö72Âv‡GG3¢òö×&—f†âç&—f†âæv÷bæ–âö×7FF–2öVævÆ—6‚öFÂÖ–æfò×&VæWvÂÖFÂæ‡FÖÂrÂu&—f†â&VæWvÂwV–Fæ6RrÂu&VæWvÂæBFG&W726†ævR&R6W&FR6VÆV7F–öç3²FF—F–öæÂFö7VÖVçG2FWVæBöâÆ–6Væ6R6Æ72æBÆ–6çBvRâr“·ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚v‡7'r’—&WGW&â6öæF—F–öæÂ…·&WFö2‚ufV†–6ÆR&Vv—7G&F–öâçVÖ&W"æB$2FWF–Ç2rÂtæVVFVBFò–FVçF–g’F†RfV†–6ÆRr’Ç&WFö2‚t6†76—2òVæv–æRFWF–Ç2öæÇ’–b&WVW7FVB'’F†RWF†÷&—¦VBÆFR&öö¶–ær÷'FÂrÂu÷'FÂÖFWVæFVçBr’Ç&WFö2‚tW†—7F–ærÆFRòöÆ–6R&W÷'B–b&WÆ6–ærÆ÷7B÷"FÖvVBÆFRrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢ò÷wwrçVæ¦'G&ç7÷'Bæ÷&ròrÂuVæ¦"G&ç7÷'BFW'FÖVçBrÂu&WV—&VÖVçG2æB–ÖVçB&R6WB'’F†RWF†÷&—¦VB…5%&öö¶–ær&÷f–FW"f÷"F†RfV†–6ÆRâ6öæf—&ÒF†Röff–6–Â&öö¶–ær&÷WFR&Vf÷&RF¶–ær–ÖVçBâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚w&F–öâr—ÇÆæÖRæ–æ6ÇVFW2‚vfÖ–Ç’–Br’—¶6öç7BFö73Õ·&WFö2‚tfÖ–Ç’ÖVÖ&W'>(	’æÖW2ÂvW2æB†÷W6V†öÆBFG&W72rÂu÷'FÂFWF–Ç2rÆfÇ6R•Ó¶–b†¶–æCÓÓÒvæWrr—¶Fö72çW6‚‡&WFö2‚u7W'&VæFW"òFVÆWF–öâ6W'F–f–6FRf÷"âöÆB&F–öâ6&BÂ–bF†RÆ–6çB†2öæRrÂtöÆFW"6†'FW#²fW&–g’rÇG'VR’“¶Fö72çW6‚‡&WFö2‚uGvòfÖ–Ç’†÷Föw&‡2Â27FFVB–âF†R#’6—F—¦Vâ6†'FW"rÂtöÆFW"6†'FW#²fW&–g’rÇG'VR’—ÖVÇ6R–b†¶–æCÓÓÒvÖVÖ&W"r–Fö72çW6‚‡&WFö2‚tÖ'&–vRò&—'F‚òFVF‚òG&ç6fW"&V6÷&B&VÆWfçBFòF†RÖVÖ&W"6†ævRrÂt66RÖFWVæFVçBr’“¶VÇ6R–b†¶–æCÓÓÒv6÷'&V7F–öâr–Fö72çW6‚‡&WFö2‚tFG&W72&ööbf÷"âFG&W72Ö6†ævR&WVW7BrÂt66RÖFWVæFVçBr’“¶VÇ6W¶Fö72çW6‚‡&WFö2‚u7W'&VæFW"òFVÆWF–öâ6W'F–f–6FRf÷"âöÆB6&B–â6öÖRæWrÖ6&B66W2rÂtöÆFW"6†'FW#²fW&–g’rÇG'VR’“¶Fö72çW6‚‡&WFö2‚tfÖ–Ç’†÷Föw&‡2òÖVÖ&W"Ö6†ævR&ööbv†W&RF†RÆ—fR÷'FÂ6·2f÷"F†VÒrÂt66RÖFWVæFVçBrÇG'VR’—×&WGW&â6öæF—F–öæÂ†Fö72Âv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó#’óBôÖöFÂÔ6—F—¦VâÔ6†'F"ÓçFbrÂuVæ¦"&F–öâÖ6&B6—F—¦Vâ6†'FW"ƒ#’’rÂuF†RV&Æ—6†VB6†'FW"—2FFVB#’â6öæf—&ÒFöFž(	—2Væ¦"fööBb7WÆ–W2÷'FÂ6†V6¶Æ—7B&Vf÷&R6öÆÆV7F–ær÷"6†&v–ærf÷"ç’—FVÒâr“·ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚v—G"r’—&WGW&â6öæF—F–öæÂ…·&WFö2‚uâæB66W72FòF†R–æ6öÖR×F‚RÖf–Æ–ær66÷VçBrÂu÷'FÂFWF–Ç2rÆfÇ6R’Ç&WFö2‚tf÷&ÒbòdÂ•2æBf÷&Ò#d2Â2Æ–6&ÆRrÂuW6VgVÂf÷"&W&–ær&WGW&âr’Ç&WFö2‚t&æ²7FFVÖVçG2ò–çFW&W7B6W'F–f–6FW2&VÆWfçBFò–æ6öÖRrÂuW6VgVÂf÷"&W&–ær&WGW&âr’Ç&WFö2‚u&VçBÂ–çfW7FÖVçBÂFöæF–öâ÷"FVGV7F–öâ&öög2öæÇ’–b6Æ–Ö–ærF†VÒrÂt6öæF—F–öæÂr’Ç&WFö2‚t6—FÂÖv–â÷"'W6–æW72&V6÷&G2–bF†B–æ6öÖRG—RÆ–W2rÂt6öæF—F–öæÂr•ÒÂv‡GG3¢ò÷wwræ–æ6öÖWF‚æv÷bæ–âö–V2öf÷÷'FÂö†VÇöÆÂ×F÷–72öRÖf–Æ–ær×6W'f–6W2ô•E#ÔdrÂt–æ6öÖRF‚FW'FÖVçB•E"ÓdrÂtW†7B&V6÷&G2FWVæBöâF†R6÷'&V7B•E"f÷&ÒæB–æ6öÖR6÷W&6W2âF†W6R&Rv÷&¶–ær&V6÷&G3²•E'2&RææW‡W&RÖÆW72æBvVæW&ÆÇ’Fòæ÷B&WV—&RWÆöF–ærF†W6R&öög2v—F‚F†R&WGW&ââr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v¦ö"f÷&Òr—ÇÆæÖRæ–æ6ÇVFW2‚w&V7'V—FÖVçBr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7B&V7'V—FÖVçBGfW'F—6VÖVçBò÷7Bæ÷F–6RæBçVÖ&W"rÂu&WV—&VBFò–FVçF–g’F†—2Æ–6F–öâr’Ç&WFö2‚töæÇ’F†R6W'F–f–6FW2æB†÷Fò÷6–væGW&Rf÷&ÖG2æÖVB–âF†B7V6–f–2æ÷F–6RrÂu÷7B×7V6–f–2r•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âö–×æ÷F–f–6F–öç2òrÂuVæ¦"v÷fW&æÖVçBæ÷F–f–6F–öç2rÂuF†W&R—2æòVæ—fW'6Âv÷fW&æÖVçBÖ¦ö"Fö7VÖVçBÆ—7BâF†R&V7'V—FÖVçBæ÷F–f–6F–öâ—2æVVFVB&Vf÷&R6÷'&V7BWÆöB6†V6¶Æ—7B6â&R6†÷vââr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚wÒf—6‡v¶&Ör’—&WGW&âöff–6–Â…·&WFö2‚tF†"çVÖ&W"æBF†"ÖÆ–æ¶VBõEò&–öÖWG&–2fW&–f–6F–öâBF†R542rÂu÷'FÂ7FWrÆfÇ6R’Ç&WFö2‚t&æ²66÷VçBFWF–Ç3²&æ²66÷VçB—2&WV—&VBf÷"&VæVf—G2rÂu÷'FÂFWF–Ç2rÆfÇ6R’Ç&WFö2‚tæòFö7VÖVçBWÆöB—2&WV—&VBöâF†RÒf—6‡v¶&Ö÷'FÂrÂtæòWÆöBrÆfÇ6R•ÒÂv‡GG3¢òö6†×–öç2æv÷bæ–âôÖ–æ—7G'’ÖöbÔÕ4ÔR÷6¶–ÆÇ2S$6ÆöâS$67&VF—EöwV&çFVRS$5ÒÖFÖæ—&&†"ÔV6öæöÖ–2Õ6¶vRS$6VÆ–v–&–Æ—G•ö7&—FW&–S$6wV–FVÆ–æW5õ66†VÖW2÷VW'•÷VW7F–öç5ôd2æ‡FÒrÂtÖ–æ—7G'’öbÕ4ÔRÒf—6‡v¶&ÖdrÂtFòæ÷BWÆöBF†"ö&æ²66ç2FòF†—2vV'6—FRf÷"F†—2&Vv—7G&F–öââF†R'F—6â×W7BÖVWBF†R66†VÖRG&FRæBfW&–f–6F–öâ6öæF—F–öç2âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚vR×6‡&Òr’—&WGW&âöff–6–Â…·&WFö2‚tF†"çVÖ&W"æBF†"ÖÆ–æ¶VBÖö&–ÆRõE²&–öÖWG&–2542Vç&öÆÖVçB–bF†BÖö&–ÆR—2æ÷BÆ–æ¶VBrÂu÷'FÂ7FWrÆfÇ6R’Ç&WFö2‚tæòf–ÆRWÆöB—2æ÷&ÖÆÇ’Æ—7FVB–âF†Röff–6–Âv÷&¶W"&Vv—7G&F–öâ7FW2rÂtæòWÆöBrÆfÇ6R•ÒÂv‡GG3¢òöW6‡&Òæv÷bæ–âöf2rÂvRÕ6‡&Òöff–6–ÂdrÂuW6RF†Röff–6–Â÷'FÂô542fÆ÷s²æWfW"6²F†R7W7FöÖW"Fò6VæBâF†"õE–âv†G4ÖW76vRâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v&†r’—&WGW&âöff–6–Â…·&WFö2‚tF†"çVÖ&W"æBÖö&–ÆRõEõ"æ÷F†W"7W÷'FVB–FVçF—G’×fW&–f–6F–öâ&÷WFRrÂu÷'FÂ7FWrÆfÇ6R’Ç&WFö2‚tæòFö7VÖVçB—2æVVFVBf÷"–ç7FçBF†"Ö&6VB$„7&VF–öârÂtæòWÆöBrÆfÇ6R•ÒÂv‡GG3¢òö&FÒæv÷bæ–â÷7G&–6×2÷WÆöG2ô$„õô4´UEõ4•¤Uöf–æÅóc&S6F&3f2çFbrÂt$DÒ$„'&ö6‡W&RrÂt$„7&VF–öâ—2föÇVçF'’âFòæ÷BWÆöBF†"FòF†—2&WVW7Bf÷&Ò§W7BFò7&VFRâ$„çVÖ&W"âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚wVF–Br’—&WGW&âöff–6–Â…·&WFö2‚tÆ–6çB6öÆ÷W"†÷Föw&‚rÂtÖæFF÷'’rÇG'VRÇ¶Ö–ä´#£RÆÖ„´#£Ò’Ç&WFö2‚tÆ–6çB6–væGW&R–ÖvRrÂtÖæFF÷'’rÇG'VRÇ¶Ö–ä´#£2ÆÖ„´#£3Ò’Ç&WFö2‚tFG&W72&ööbrÂtÖæFF÷'’rÇG'VRÇ¶Ö–ä´#£ÆÖ„´#£SÒ’Ç&WFö2‚tF—6&–Æ—G’6W'F–f–6FRÂ–bÇ&VG’—77VVC²÷F†W'v—6RföÆÆ÷rF†Röff–6–Â76W76ÖVçBv÷&¶fÆ÷rrÂt6öæF—F–öæÂrÇG'VRÇ¶Ö–ä´#£ÆÖ„´#£SÒ’Ç&WFö2‚tF†"FWF–Ç2f÷"÷'FÂfW&–f–6F–öârÂu÷'FÂ7FWrÆfÇ6R•ÒÂv‡GG3¢ò÷7vfÆÖ&æ6&Bæv÷bæ–âöf2rÂuTD”Böff–6–ÂdrÂuF†Röff–6–ÂdÆ—7G2^(	3´"f÷"†÷FòÂ>(	33´"f÷"6–væGW&RæB(	3S´"f÷"FG&W72öF—6&–Æ—G’&ööbâFG&W72&ööbÖ’æ÷B&RæVVFVB6W&FVÇ’v†VâF†RF†"FG&W72—2F†R6ÖRâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v¦VWfâ&Öâr’—&WGW&âöff–6–Â…·&WFö2‚uVç6–öæW"F†"çVÖ&W"òd”BæB&–öÖWG&–2WF†VçF–6F–öârÂu÷'FÂ7FWrÆfÇ6R’Ç&WFö2‚uòçVÖ&W"r’Ç&WFö2‚uVç6–öâ66÷VçBò&æ²æBVç6–öâWF†÷&—G’FWF–Ç2rÂu÷'FÂFWF–Ç2rÆfÇ6R’Ç&WFö2‚tF†"×&Vv—7FW&VBÖö&–ÆRçVÖ&W"f÷"WFFW2rÂu÷'FÂFWF–Ç2rÆfÇ6R•ÒÂv‡GG3¢òö¦VWfç&Öâæv÷bæ–â÷c"ãöÖ—62öfrÂt¦VWfâ&Öâöff–6–ÂdrÂuF†RVç6–öæW"&÷f–FW2Vç6–öâ×&VÆFVBFWF–Ç2GW&–ærvVæW&F–öã²F†—2—2æ÷BvVæW&–2Fö7VÖVçB×WÆöB6†V6¶Æ—7Bâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚wÒÖ¶—6âr’—&WGW&âöff–6–Â…·&WFö2‚tF†"FWF–Ç2f÷"–FVçF—G’WF†VçF–6F–öârÂu÷'FÂ7FWrÆfÇ6R’Ç&WFö2‚t&æ²66÷VçBçVÖ&W"æB”e42rÂu÷'FÂFWF–Ç2rÆfÇ6R’Ç&WFö2‚tÆæF†öÆF–ærò7FFRÆæB&V6÷&BFWF–Ç2f÷"VÆ–v–&–Æ—G’rÂu÷'FÂFWF–Ç2rÆfÇ6R•ÒÂv‡GG3¢ò÷Ö¶—6âæv÷bæ–âôFö7VÖVçG2ôdÔ´•4âçFbrÂuÒÔ¶—6âöff–6–ÂdrÂtVÆ–v–&–Æ—G’æB–FVçF—G’&÷WFW26âf'’VæFW"66†VÖR'VÆW2âW6RF†Röff–6–Â&Vv—7G&F–öâ÷'FÎ(	—2&ö×G3²Fòæ÷B&WVW7B&æ²7&VFVçF–Ç2÷"õE2âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚wVç6–öâr’—°Ð¢6öç7B—5v–F÷sÖæÖRæ–æ6ÇVFW2‚wv–F÷rr’Æ—4F—6&ÆVCÖæÖRæ–æ6ÇVFW2‚vF—g–ærr“°Ð¢6öç7BFö73Õ·&WFö2‚t–FVçF—G’&ööbr’Ç&WFö2‚tFG&W72&ööbr’Ç&WFö2‚tFFRÖöbÖ&—'F‚&ööbr’Ç&WFö2‚t&æ²76&öö²ò66÷VçB&ööbr•Ó°Ð¢–b†—5v–F÷r–Fö72çW6‚‡&WFö2‚t‡W6&æN(	—2FVF‚6W'F–f–6FRr’Ç&WFö2‚tF—f÷&6Rò6÷W'B÷"æ6†–B&V6÷&BÂ–bÇ––ær2F—f÷&6VBFW7F—GWFRrÂt6öæF—F–öæÂr’“°Ð¢–b†—4F—6&ÆVB–Fö72çW6‚‡&WFö2‚uTD”BòF—6&–Æ—G’&ööbr’“°Ð¢&WGW&âöff–6–Â†Fö72Æ—5v–F÷sòv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##Ró’õv–F÷rÔFW7F—GWFR×Vç6–öâ×66†VÖRçFbs¦—4F—6&ÆVCòv‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##Ró’ôF—6&ÆVBÕW'6öâÕVç6–öâ×66†VÖRçFbs¢v‡GG3¢ò÷Væ¦"æv÷bæ–â÷wÖ6öçFVçB÷WÆöG2ó##Ró’ôöÆBÔvRÕVç6–öâÕ66†VÖRçFbrÂuVæ¦"##RVç6–öâ6W'f–6Rf÷&ÒrÂuF†RVç6–öâ6FVv÷'’æBÆ–6çB6—GVF–öâFV6–FRv†WF†W"âW‡G&Fö7VÖVçB—2æVVFVBâr“°Ð¢ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚v6†—'vBr—ÇÆæÖRæ–æ6ÇVFW2‚w6¶†’r’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tÆ–6çBòv—&Î(	—2FFRÖöbÖ&—'F‚&ööbr’Ç&WFö2‚tÆ–6çBæBfÖ–Ç’&W6–FVæ6RFWF–Ç2r’Ç&WFö2‚t7W'&VçB–æ6öÖRòVÆ–v–&–Æ—G’&ööb&WV—&VB'’F†RÆ—fR66†VÖR÷'FÂr’Ç&WFö2‚t6FVv÷'’òv–F÷ròF—f÷&6R&ööböæÇ’v†W&RF†RVÆ–v–&–Æ—G’&÷WFR&WV—&W2—BrÂt6öæF—F–öæÂr’Ç&WFö2‚uf–ÆÆvR6'æ6‚÷"×Væ–6—ÂfW&–f–6F–öâv†W&RF†RÆ—fRf÷&Ò&WVW7G2—BrÂt6öæF—F–öæÂr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âö6†—'vB×66†VÖRòrÂuVæ¦"6†—'vB66†VÖRvRrÂuF†R66W76–&ÆRFWF–ÆVBVæ¦"f÷&Ò—2öÆBâ6öæf—&ÒF†R7W'&VçB66†VÖR6†V6¶Æ—7BæBVÆ–v–&–Æ—G’öâ6öææV7BVæ¦"&Vf÷&R6¶–ærf÷"WÆöG2âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v—W6†Öâr—ÇÆæÖRæ–æ6ÇVFW2‚v†VÇF‚bvVÆf&Rr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚t6†V6²†÷W6V†öÆBVÆ–v–&–Æ—G’öâF†Röff–6–Â—W6†ÖâòVæ¦"†VÇF‚÷'FÂrÂu÷'FÂ7FWrÆfÇ6R’Ç&WFö2‚t&VæVf–6–'’–FVçF—G’FWF–Ç2&WVW7FVB'’F†Röff–6–Â÷'FÂrÂu÷'FÂFWF–Ç2rÆfÇ6R’Ç&WFö2‚tæòf—†VBWÆöBÆ—7BVçF–ÂF†RVÆ–v–&ÆR66†VÖRæB÷'FÂ&÷WFR&R6öæf—&ÖVBrÂt66RÖFWVæFVçBrÆfÇ6R•ÒÂv‡GG3¢òö&VæVf–6–'’ææ†æv÷bæ–âòrÂtæF–öæÂ†VÇF‚WF†÷&—G’&VæVf–6–'’÷'FÂrÂtVÆ–v–&–Æ—G’æBfW&–f–6F–öâÖWF†öBF–ffW"'’66†VÖRæB&VæVf–6–'’âFòæ÷B&öÖ—6R6&B&6VBöæÇ’öââF†"WÆöBâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚wâ6&Br’—¶–b†¶–æCÓÓÒv–ç7FçBr—&WGW&âöff–6–Â…·&WFö2‚ufÆ–BF†"v—F‚7W'&VçBµ”2æBF†"ÖÆ–æ¶VBÖö&–ÆRõErÂu÷'FÂ7FWrÆfÇ6R’Ç&WFö2‚tÆ–6çB×W7BæWfW"†fR&VVâÆÆ÷GFVBâæB×W7BÖVWB–ç7FçBRÕâVÆ–v–&–Æ—G’rÂtVÆ–v–&–Æ—G’rÆfÇ6R’Ç&WFö2‚tæòFö7VÖVçBWÆöB—2&WV—&VB–âF†R–ç7FçBRÕâfÆ÷rrÂtæòWÆöBrÆfÇ6R•ÒÂv‡GG3¢ò÷wwræ–æ6öÖWF‚æv÷bæ–âö–V2öf÷÷'FÂö†VÇöRÖf–Æ–ærÖvVæW&FRÖ–ç7FçBÖR×âÖfrÂt–æ6öÖRF‚FW'FÖVçB–ç7FçBRÕâdrÂuF†R–ç7FçBRÕâ&ö6W72—2g&VRæB—2öæÇ’f÷"VÆ–v–&ÆRÆ–6çG2v†ò†fRæWfW"&VVâÆÆ÷GFVBââ‡—6–6ÂâÂ6÷'&V7F–öâæB&W&–çBW6RF–ffW&VçBÆ–6F–öâ&÷WFRâr“·&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7B‡—6–6Ââò6÷'&V7F–öâò&W&–çBÆ–6F–öâG—RæB—G27W'&VçB&W67&–&VB&ööbÆ—7BrÂt6†ö÷6R66Rf—'7BrÆfÇ6R•ÒÂv‡GG3¢ò÷wwrç&÷FVâ×F–çâæ6öÒ÷6W'f–6W2÷â÷âÖ–æFW‚æ‡FÖÂrÂu&÷FVââÆ–6F–öâæBFö7VÖVçBwV–Fæ6RrÂuâÆ–6F–öâf÷&×26†ævVBg&öÒ&–Â##bâ6öæf—&ÒF†R7W'&VçBf÷&Òƒ“2ó“B÷"âÔ5"Â2&VÆWfçB’æB—G2&ööbÆ—7C²Fòæ÷B&WW6RâöÆBf÷&ÒC”6†V6¶Æ—7Bâr“·ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚w66†öÆ'6†—r—ÇÆæÖRæ–æ6ÇVFW2‚vFÖ—76–öâr—ÇÆæÖRæ–æ6ÇVFW2‚w7GVFVçBr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7B66†ööÂò6öÆÆVvRò66†öÆ'6†—æ÷F–6R÷"66†VÖRæÖRrÂu&WV—&VBFò–FVçF–g’F†—2Æ–6F–öâr’Ç&WFö2‚töæÇ’F†R&V6÷&G2æÖVB'’F†B–ç7F—GWF–öâò66†VÖRæ÷F–6RrÂt66RÖFWVæFVçBr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âöf÷&×2òrÂuVæ¦"v÷fW&æÖVçBf÷&×2æB66†VÖR–æFW‚rÂtFÖ—76–öâæB66†öÆ'6†—&WV—&VÖVçG2F–ffW"'’–ç7F—GWF–öâÂ6÷W'6RÂ–V"æB66†VÖRâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v¦Ö&æF’r—ÇÆæÖRæ–æ6ÇVFW2‚vÆæB&V6÷&G2r’—&WGW&â6öæF—F–öæÂ…·&WFö2‚t÷væW"æÖRÂf–ÆÆvRÂFV‡6–ÂÂ¶†7&ò¶†FVæ’÷"¦Ö&æF’&VfW&Væ6RrÂu÷'FÂFWF–Ç2rÆfÇ6R’Ç&WFö2‚t¦Ö&æF’òÆæB×&V6÷&BvR&WVW7FVB'’F†R7W7FöÖW"rÂt7W7FöÖW"×&÷f–FVB6÷’r•ÒÂv‡GG3¢òö¦Ö&æF’çVæ¦"æv÷bæ–âòrÂuVæ¦"ÆæB&V6÷&G2÷'FÂrÂt&V6÷&B6÷’Æöö·W—2F–ffW&VçBg&öÒ×WFF–öâ÷"÷væW'6†—Ö6†ævRÆ–6F–öââW†7B&öög2FWVæBöâF†RG&ç67F–öââr“°Ð¢–b†æÖSÓÓÒw†÷Fòr—&WGW&â6öæF—F–öæÂ…·&WFö2‚u&V6VçB†÷Fò–âF†Rf÷&ÖBæBF–ÖVç6–öç2&WV—&VB'’F†R6VÆV7FVBÆ–6F–öâr•ÒÂv‡GG3¢òö6öææV7BçVæ¦"æv÷bæ–âòrÂuVæ¦"6öææV7B÷'FÂrÂu†÷FòF–ÖVç6–öç2æB&6¶w&÷VæBFWVæBöâF†R6VÆV7FVBf÷&Òâr“°Ð¢–b†æÖSÓÓÒw6–væGW&Rr—&WGW&â6öæF—F–öæÂ…·&WFö2‚u6–væGW&R–ÖvR–âF†R6—¦RæBf÷&ÖB&WV—&VB'’F†R6VÆV7FVBÆ–6F–öâr•ÒÂv‡GG3¢òö6öææV7BçVæ¦"æv÷bæ–âòrÂuVæ¦"6öææV7B÷'FÂrÂtFòæ÷BWÆöB6–væGW&RVæÆW72—B—2æVVFVBf÷"F†R6†÷6Vâf÷&Òâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚w&–çBr—ÇÆæÖRæ–æ6ÇVFW2‚w†÷Fö6÷’r—ÇÆæÖRæ–æ6ÇVFW2‚w†W&÷‚r—ÇÆæÖRæ–æ6ÇVFW2‚w¦—r—ÇÆæÖRæ–æ6ÇVFW2‚vf–ÆR†VÇr—ÇÆæÖRæ–æ6ÇVFW2‚wG—–ærr—ÇÆæÖRæ–æ6ÇVFW2‚wG&ç6ÆF–öâr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚uF†RW†7B÷&–v–æÂFö7VÖVçB÷"6÷W&6Rf–ÆRFò66âÂG—RÂG&ç6ÆFR÷"&–çBr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âòrÂuVæ¦"v÷fW&æÖVçB÷'FÂrÂuF†—2—26†÷6W'f–6RÂæ÷Bv÷fW&æÖVçBÆ–6F–öâ6†V6¶Æ—7Bâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v·–2r’—&WGW&â6öæF—F–öæÂ…·&WFö2‚uF†R&V6V—f–ær&æ²ò–ç7F—GWF–öî(	—2÷vâµ”2&WVW7B÷"f÷&ÒrÂu&WV—&VBFò–FVçF–g’F†—2&WVW7Br’Ç&WFö2‚töæÇ’&öög2&WVW7FVB'’F†B–ç7F—GWF–öârÂt66RÖFWVæFVçBr•ÒÂv‡GG3¢ò÷wwrç&&’æ÷&ræ–âòrÂu$$’7W7FöÖW"µ”2wV–Fæ6RrÂtµ”2Fö7VÖVçB'VÆW2FWVæBöâF†R–ç7F—GWF–öâæB7W7FöÖW"G—RâFòæ÷B6VæBõEÂ”â÷"77v÷&G2âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚vVÆV7G&–6—G’r—ÇÆæÖRæ–æ6ÇVFW2‚wvFW"&–ÆÂr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tÆFW7B&–ÆÂ÷"6öç7VÖW"ò66÷VçBçVÖ&W"r’Ç&WFö2‚u&Vv—7FW&VBÖö&–ÆRõEÂ–bF†Röff–6–Â&÷f–FW"&WVW7G2—BrÂu÷'FÂ7FWrÆfÇ6R•ÒÂv‡GG3¢òö6öææV7BçVæ¦"æv÷bæ–âòrÂuVæ¦"6öææV7B÷'FÂrÂuWF–Æ—G’&÷f–FW"Â66÷VçBæB–ÖVçB÷F–öç2FWFW&Ö–æRF†RW†7B&ö6W72âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v¦ö"f÷&Òr—ÇÆæÖRæ–æ6ÇVFW2‚w&V7'V—FÖVçBr—ÇÆæÖRæ–æ6ÇVFW2‚v¦ö"Æ–6F–öâr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7B¦ö"ò÷7BGfW'F—6VÖVçB÷"æ÷F–f–6F–öârÂu&WV—&VBFò–FVçF–g’F†—2Æ–6F–öâr’Ç&WFö2‚töæÇ’Fö7VÖVçG27V6–f–VB–âF†B'F–7VÆ"æ÷F–f–6F–öârÂu÷7B×7V6–f–2r•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âö–×æ÷F–f–6F–öç2òrÂuVæ¦"v÷fW&æÖVçBæ÷F–f–6F–öç2rÂtæò6–ævÆRFö7VÖVçBÆ—7BÆ–W2FòÆÂ&V7'V—FÖVçBf÷&×2âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚w66†öÆ'6†—r—ÇÆæÖRæ–æ6ÇVFW2‚vFÖ—76–öâr—ÇÆæÖRæ–æ6ÇVFW2‚w7GVFVçBr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7BFÖ—76–öâæ÷F–6R÷"æÖVB66†öÆ'6†—66†VÖRrÂu&WV—&VBFò–FVçF–g’F†—2Æ–6F–öâr’Ç&WFö2‚töæÇ’Fö7VÖVçG27V6–f–VB'’F†B–ç7F—GWF–öâò66†VÖRrÂt66RÖFWVæFVçBr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âöf÷&×2òrÂuVæ¦"v÷fW&æÖVçBf÷&×2æB66†VÖR–æFW‚rÂtVÆ–v–&–Æ—G’æBWÆöB'VÆW26†ævR'’6÷W'6RÂ–ç7F—GWF–öâÂ66†VÖRæB–V"âr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚wvVÆf&Rr—ÇÆæÖRæ–æ6ÇVFW2‚v†VÇF‚r’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7B66†VÖRæÖRæBöff–6–Â66†VÖR÷'FÂòæ÷F–6RrÂu&WV—&VBFò–FVçF–g’F†—2Æ–6F–öâr’Ç&WFö2‚töæÇ’&öög26†÷vâöâF†B66†VÖ^(	—27W'&VçB÷'FÂrÂt66RÖFWVæFVçBr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âöf÷&×2òrÂuVæ¦"v÷fW&æÖVçBf÷&×2æB66†VÖR–æFW‚rÂuvVÆf&R6W'f–6W2Fòæ÷B6†&RöæRVæ—fW'6ÂFö7VÖVçB6†V6¶Æ—7Bâr“°Ð¢–b†æÖRæ–æ6ÇVFW2‚væö2r—ÇÆæÖRæ–æ6ÇVFW2‚v6÷'&V7F–öâr’—&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7BFW'FÖVçBÂf÷&ÒæÖRæB6÷'&V7F–öâòäô2W'÷6RrÂu&WV—&VBFò–FVçF–g’F†—2Æ–6F–öâr’Ç&WFö2‚tW†—7F–ær&V6÷&BæB&ööböb&WVW7FVB6†ævRÂ–bF†Röff–6–Âf÷&Ò6·2f÷"F†VÒrÂt66RÖFWVæFVçBr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âöf÷&×2òrÂuVæ¦"v÷fW&æÖVçBf÷&×2æB66†VÖR–æFW‚rÂtF–ffW&VçBäô72æB6÷'&V7F–öç2†fRF–ffW&VçBWF†÷&—F–W2æBFö7VÖVçB'VÆW2âr“°Ð¢&WGW&â6öæF—F–öæÂ…·&WFö2‚tW†7Bv÷fW&æÖVçBf÷&Òò66†VÖRæÖRÂFW'FÖVçBæBÆ–6F–öâæ÷F–6RrÂu&WV—&VBFò–FVçF–g’F†—2Æ–6F–öâr’Ç&WFö2‚uF†Röff–6–Â÷'FÎ(	—2Fö7VÖVçBÆ—7Bf÷"F†BW†7Bf÷&ÒrÂt66RÖFWVæFVçBr•ÒÂv‡GG3¢ò÷Væ¦"æv÷bæ–âöf÷&×2òrÂuVæ¦"v÷fW&æÖVçBf÷&×2–æFW‚rÂt6fR&WV—&VBÖFö7VÖVçBÆ—7B6ææ÷B&R6†÷vâVçF–ÂF†RW†7Bf÷&ÒÂ66†VÖR÷"÷'FÂ&÷WFR—2–FVçF–f–VBâr“°Ð¢Ó°Ð¢6öç7B&WV—&VÖVçEf&–çD÷F–öç2Ò‡6W'f–6R’Óâ°Ð¢6öç7BæÖS×6W'f–6RçFôÆ÷vW$66R‚“°Ð¢–b†æÖRæ–æ6ÇVFW2‚v67FRr’—&WGW&âµ²w62rÂu66†VGVÆVB67FR…42’uÒÅ²v&2Öö&2rÂt$2òô$2uÒÅ²vvVæW&ÂrÂtvVæW&Â67FRuÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚w&W6–FVçBr—ÇÆæÖRæ–æ6ÇVFW2‚vFöÖ–6–ÆRr’—&WGW&âµ²w7FæF&BrÂu7FæF&BVæ¦"&W6–FVæ6R66RuÒÅ²w&÷W'G’rÂuVæ¦"&÷W'G’òÆæB&6—2uÒÅ²v&÷&ârÂt&÷&â–âVæ¦"&6—2uÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚w'W&Âr’bfæÖRæ–æ6ÇVFW2‚v&÷&FW"&Vr’—&WGW&âµ²w'W&ÂrÂu'W&Â&V6W'F–f–6FRuÒÅ²v&÷&FW"rÂt&÷&FW"&V6W'F–f–6FRuÕÓ°Ð¢–b†æÖSÓÓÒvG&—f–ærÆ–6Væ6Rr—&WGW&âµ²vÆV&æW"rÂtÆV&æW"Æ–6Væ6RuÒÅ²wW&ÖæVçBrÂuW&ÖæVçBÆ–6Væ6RuÒÅ²w&VæWvÂrÂu&VæWvÂuÒÅ²vFG&W72rÂtFG&W726†ævRuÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚vFÂ&VæWvÂr’—&WGW&âµ²w&VæWvÂrÂtÆ–6Væ6R&VæWvÂuÒÅ²vFG&W72rÂtFG&W726†ævRuÒÅ²v&÷F‚rÂu&VæWvÂæBFG&W726†ævRuÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚v&—'F‚r’bfæÖRæ–æ6ÇVFW2‚vFVF‚r’—&WGW&âµ²v&—'F‚Ö6÷’rÂt&—'F‚6W'F–f–6FR6÷’uÒÅ²v&—'F‚×&Vv—7G&F–öârÂt&—'F‚&Vv—7G&F–öâòÆFR&Vv—7G&F–öâuÒÅ²v&—'F‚Ö6÷'&V7F–öârÂt6÷'&V7F–öâ–â&—'F‚6W'F–f–6FRuÒÅ²vFVF‚Ö6÷’rÂtFVF‚6W'F–f–6FR6÷’uÒÅ²vFVF‚×&Vv—7G&F–öârÂtFVF‚&Vv—7G&F–öâòÆFR&Vv—7G&F–öâuÒÅ²vFVF‚Ö6÷'&V7F–öârÂt6÷'&V7F–öâ–âFVF‚6W'F–f–6FRuÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚v&—'F‚r’—&WGW&âµ²v&—'F‚Ö6÷’rÂt&—'F‚6W'F–f–6FR6÷’uÒÅ²v&—'F‚×&Vv—7G&F–öârÂt&—'F‚&Vv—7G&F–öâòÆFR&Vv—7G&F–öâuÒÅ²v&—'F‚Ö6÷'&V7F–öârÂt6÷'&V7F–öâ–â&—'F‚6W'F–f–6FRuÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚vFVF‚r’—&WGW&âµ²vFVF‚Ö6÷’rÂtFVF‚6W'F–f–6FR6÷’uÒÅ²vFVF‚×&Vv—7G&F–öârÂtFVF‚&Vv—7G&F–öâòÆFR&Vv—7G&F–öâuÒÅ²vFVF‚Ö6÷'&V7F–öârÂt6÷'&V7F–öâ–âFVF‚6W'F–f–6FRuÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚wf÷FW"r’—&WGW&âµ²væWrrÂtæWrf÷FW"&Vv—7G&F–öâ„f÷&Òb’uÒÅ²v6÷'&V7F–öârÂt6÷'&V7Bf÷FW"FWF–Ç2„f÷&Ò‚’uÒÅ²w6†–gBrÂu6†–gBFG&W72„f÷&Ò‚’uÒÅ²w&WÆ6VÖVçBrÂu&WÆ6VÖVçBU”2„f÷&Ò‚’uÒÅ²w†÷FòrÂt6†ævR†÷Fò„f÷&Ò‚’uÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚w&F–öâr’—&WGW&âµ²væWrrÂtæWr&F–öâ6&BuÒÅ²vÖVÖ&W"rÂtFBòFVÆWFRfÖ–Ç’ÖVÖ&W"uÒÅ²v6÷'&V7F–öârÂtFG&W72ò÷F†W"6÷'&V7F–öâuÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚w77÷'Br’—&WGW&âµ²vg&W6‚rÂtg&W6‚77÷'BuÒÅ²w&V—77VRrÂu&V—77VRò&VæWvÂuÕÓ°Ð¢–b†æÖRæ–æ6ÇVFW2‚vF†"r’bbæÖRæ–æ6ÇVFW2‚wf2r’—¶6öç7B÷F–öç3Õµ²vFG&W72rÂtFG&W72WFFRuÒÅ²væÖRrÂtæÖRòFFRÖöbÖ&—'F‚WFFRuÒÅ²v÷F†W"rÂt÷F†W"F†"WFFRuÕÓ¶–b†æÖRæ–æ6ÇVFW2‚v&æ²r’–÷F–öç2çW6‚…²v&æ²rÂt&æ²66÷VçBF†"6VVF–æruÒ“·&WGW&â÷F–öç3·ÐÐ¢–b†æÖRæ–æ6ÇVFW2‚wâ6&Br’—&WGW&âµ²w‡—6–6ÂrÂu‡—6–6Ââò6÷'&V7F–öâò&W&–çBuÒÅ²v–ç7FçBrÂt–ç7FçBRÕâ†VÆ–v–&ÆRæWrâöæÇ’’uÕÓ°Ð¢&WGW&âµÓ°Ð¢Ó°Ð¢6öç7BG"Ò°Ð¢Vã§¶6÷&æW#¢uv†BFò–÷RæVVB†VÇv—FƒòrÆFö73¢tf–æBF†R6W'f–6R–÷RæVVBârÆÇ“¢tÇ’f÷"6W'f–6RrÇG&6³¢uG&6²Æ–6F–öârÆ6ö×Æ–çC¢u&Vv—7FW"6ö×Æ–çBrÇfW&–g“¢t6W'F–f–6FRfW&–f–6F–öârÇ&VÇ“¢tÇ’v–ârÆF÷væÆöC¢tF÷væÆöBò&–çBrÇ6V&6ƒ¢u6V&6‚ç’6W'f–6S¢F†"ÂâÂf÷FW"6&N(
+brÆ&öö¶–æs¢uVæ¦"5426â6öÖRFò–÷RârÆÇ”'WGFöã¢t6†V6¶Æ—7BbÇ’wÒÀÐ¢§¶6÷&æW#¢~
+ŠN
+˜
+‹ž
+‹î
+ŠŽ
+˜.
+›
+‰^
+‹þ
+‹‚
+‰^
+›
+Šâ
+‹^
+‹þ
+›
+‰¢
+Šî
+Šn
+Šb
+‰®
+‹î
+‹ž
+˜
+Šn
+˜
+‹ž
+˜ƒòrÆFö73¢~
+ˆn
+Š®
+Š>
+˜
+‹Ž
+˜~
+‹^
+‹â
+‹.
+›
+ŠÞ
+˜¾
+ZBrÆÇ“¢~
+‹Ž
+˜~
+‹^
+‹â
+‹.
+ˆ‚
+ˆ^
+‹
+‰Î
+‹Î
+˜rÇG&6³¢~
+ˆ^
+‹
+‰Î
+‹Î
+˜
+Šn
+˜
+‹Ž
+Š^
+‹þ
+ŠN
+˜rÆ6ö×Æ–çC¢~
+‹Ž
+‹Î
+‹þ
+‰^
+‹î
+ˆ~
+ŠB
+Šn
+‹
+‰Â
+‰^
+‹
+˜²rÇfW&–g“¢~
+‹Ž
+‹
+‰þ
+˜
+Š¾
+‹þ
+‰^
+˜~
+‰ò
+Šn
+˜
+‰Î
+‹î
+ˆ.
+‰¢rÇ&VÇ“¢~
+Šn
+˜
+ŠÎ
+‹î
+‹
+‹â
+ˆ^
+‹
+‰Î
+‹Î
+˜rÆF÷væÆöC¢~
+Š
+‹î
+ˆ®
+ŠŽ
+‹.
+˜¾
+Šò
+Š®
+˜Þ
+‹
+‹þ
+›
+‰òrÇ6V&6ƒ¢~
+‰^
+˜¾
+ˆ‚
+‹^
+˜
+‹Ž
+˜~
+‹^
+‹â
+‹.
+›
+ŠÞ
+˜³¢
+ˆn
+Š~
+‹î
+‹Â
+Š®
+˜Ž
+Š‚Â
+‹^
+˜¾
+‰þ
+‹
+‰^
+‹î
+‹
+Š(
+brÆ&öö¶–æs¢uVæ¦"542
+ŠN
+˜
+‹ž
+‹î
+Š
+˜r
+‰Ž
+‹
+ˆb
+‹Ž
+‰^
+Šn
+‹â
+‹ž
+˜Ž
+ZBrÆÇ”'WGFöã¢~
+‹Ž
+˜.
+‰®
+˜
+ŠN
+˜r
+ˆ^
+‹
+‰Î
+‹Î
+˜wÒÀÐ¢†“§¶6÷&æW#¢~
+Hn
+J®
+I^
+X²
+I^
+Kþ
+K‚
+I^
+Kî
+Jâ
+Jî
+X~
+H"
+Jî
+Jn
+Jb
+I®
+Kî
+Kž
+Kþ
+HóòrÆFö73¢~
+H^
+J®
+JŽ
+X
+KŽ
+X~
+K^
+Kâ
+In
+X¾
+IÎ
+X~
+H.
+ZBrÆÇ“¢~
+KŽ
+X~
+K^
+Kâ
+I^
+Xr
+K.
+Kþ
+Hò
+Hn
+K^
+X~
+Jn
+J‚rÇG&6³¢~
+Hn
+K^
+X~
+Jn
+J‚
+I^
+X
+KŽ
+XÞ
+J^
+Kþ
+JN
+KòrÆ6ö×Æ–çC¢~
+Kn
+Kþ
+I^
+Kî
+Jþ
+JB
+Jn
+K
+XÞ
+IÂ
+I^
+K
+X~
+H"rÇfW&–g“¢~
+J®
+XÞ
+K
+Jî
+Kî
+J>
+J®
+JN
+XÞ
+K
+KŽ
+JN
+XÞ
+Jþ
+Kî
+J®
+J‚rÇ&VÇ“¢~
+Jn
+X¾
+JÎ
+Kî
+K
+Kâ
+Hn
+K^
+X~
+Jn
+J‚rÆF÷væÆöC¢~
+J
+Kî
+Hž
+JŽ
+K.
+X¾
+Jò
+J®
+XÞ
+K
+Kþ
+H.
+IòrÇ6V&6ƒ¢~
+I^
+X¾
+H‚
+JÞ
+X
+KŽ
+X~
+K^
+Kâ
+In
+X¾
+IÎ
+X~
+H#¢
+Hn
+J~
+Kî
+KÂ
+J®
+XŽ
+J‚Â
+K^
+X¾
+Iþ
+K
+I^
+Kî
+K
+XÞ
+J(
+brÆ&öö¶–æs¢uVæ¦"542
+Hn
+J®
+I^
+Xr
+IŽ
+K
+Hb
+KŽ
+I^
+JN
+Kâ
+Kž
+XŽ
+ZBrÆÇ”'WGFöã¢~
+KŽ
+X.
+I®
+X
+IN
+K
+Hn
+K^
+X~
+Jn
+J‚wÒÀÐ¢Ó°Ð¢Fö7VÖVçBæFDWfVçDÆ—7FVæW"‚tDôÔ6öçFVçDÆöFVBrÂ‚’Óâ°Ð¢6öç7BÖöFÃÖFö7VÖVçBçVW'•6VÆV7F÷"‚r6ÖöFÂr’Æ&öG“ÖFö7VÖVçBçVW'•6VÆV7F÷"‚r6ÖöFÂÖ6öçFVçBr“°Ð¢6öç7BFö7CÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vF—br“·Fö7Bæ6Æ74æÖSÒwFö7Bs·Fö7Bç6WDGG&–'WFR‚w&öÆRrÂw7FGW2r“¶Fö7VÖVçBæ&öG’æVæB‡Fö7B“¶ÆWBFö7EF–ÖW#°Ð¢6öç7Bæ÷F–g“Ò†ÖW76vR“Óç·Fö7BçFW‡D6öçFVçCÖÖW76vS·Fö7Bæ6Æ74Æ—7BæFB‚w6†÷rr“¶6ÆV%F–ÖV÷WB‡Fö7EF–ÖW"“·Fö7EF–ÖW#×6WEF–ÖV÷WB‚‚“ÓçFö7Bæ6Æ74Æ—7Bç&VÖ÷fR‚w6†÷rr’Ã#c—Ó°Ð¢6öç7B‡FÖÄW66SÒ‡fÇVR“Óå7G&–ær‡fÇVR’ç&WÆ6R‚õ²cÃâ"uÒörÂ†6†&7FW"“Óâ‡²rbs¢rf×²rÂsÂs¢rfÇC²rÂsâs¢rfwC²rÂr"s¢rgV÷C²rÂ"r#¢rb33“²wÕ¶6†&7FW%Ò’“°Ð¢6öç7B—57W÷'FVDFö7VÖVçCÖ7–æ2†f–ÆRÆÖ–ä'—FW3ÓÆÖ„'—FW3Ó£#B£#B“Óç°Ð¢–b‚f–ÆWÇÆf–ÆRç6—¦SÆÖ–ä'—FW7ÇÆf–ÆRç6—¦SæÖ„'—FW2—&WGW&âfÇ6S°Ð¢6öç7BæÖSÖf–ÆRææÖRçFôÆ÷vW$66R‚’Æ'—FW3ÖæWrV–çC„'&’†v—Bf–ÆRç6Æ–6RƒÃ#B’æ'&”'VffW"‚’“°Ð¢–b†æÖRæVæG5v—F‚‚rçFbr’—&WGW&â7G&–æræg&öÔ6†$6öFR‚ââæ'—FW2’æ–æ6ÇVFW2‚rUDbÒr“°Ð¢–b†æÖRæVæG5v—F‚‚ræ§rr—ÇÆæÖRæVæG5v—F‚‚ræ§Vrr’—&WGW&â'—FW2æÆVæwFƒãÓ2bf'—FW5³ÓÓÓÓ†fbbf'—FW5³ÓÓÓÓ†C‚bf'—FW5³%ÓÓÓÓ†fc°Ð¢–b†æÖRæVæG5v—F‚‚rçærr’—&WGW&â'—FW2æÆVæwFƒãÓ‚bf'—FW5³ÓÓÓÓƒƒ’bf'—FW5³ÓÓÓÓƒSbf'—FW5³%ÓÓÓÓƒFRbf'—FW5³5ÓÓÓÓƒCrbf'—FW5³EÓÓÓÓƒBbf'—FW5³UÓÓÓÓƒbf'—FW5³eÓÓÓÓƒbf'—FW5³uÓÓÓÓƒ°Ð¢&WGW&âfÇ6S°Ð¢Ó°Ð¢6öç7B6öö¶–T&ææW#ÖFö7VÖVçBçVW'•6VÆV7F÷"‚r66öö¶–RÖ&ææW"r’Æ6öö¶–T6†ö–6SÒ‚“Óç·G'—·&WGW&âÆö6Å7F÷&vRævWD—FVÒ‚vFVWÖ6öö¶–RÖ6†ö–6Rr—Ö6F6‡·&WGW&âçVÆÇ×Ó°Ð¢6öç7BÆöD÷F–öæÄföçG3Ò‚“Óç¶–b†Fö7VÖVçBçVW'•6VÆV7F÷"‚r6÷F–öæÂÖvöövÆRÖföçG2r’—&WGW&ã¶6öç7BÆ–æ³ÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vÆ–æ²r“¶Æ–æ²æ–CÒv÷F–öæÂÖvöövÆRÖföçG2s¶Æ–æ²ç&VÃÒw7G–ÆW6†VWBs¶Æ–æ²æ‡&VcÒv‡GG3¢òöföçG2ævöövÆV—2æ6öÒö773#öfÖ–Ç“ÔDÒµ6ç3§vv‡DC³S³c³s³ƒffÖ–Ç“Ô÷WFf—C§vv‡DS³c³s³ƒfF—7Æ“×7vs¶Fö7VÖVçBæ†VBæVæB†Æ–æ²—Ó°Ð¢6öç7B6fT6öö¶–T6†ö–6SÒ†6†ö–6R“Óç·G'—¶Æö6Å7F÷&vRç6WD—FVÒ‚vFVWÖ6öö¶–RÖ6†ö–6RrÆ6†ö–6R—Ö6F6‡·Ö6öö¶–T&ææW"æ†–FFVã×G'VS¶–b†6†ö–6SÓÓÒv66WFVBr–ÆöD÷F–öæÄföçG2‚—Ó°Ð¢6öç7BW†—7F–æt6öö¶–T6†ö–6SÖ6öö¶–T6†ö–6R‚“¶–b†W†—7F–æt6öö¶–T6†ö–6SÓÓÒv66WFVBr–ÆöD÷F–öæÄföçG2‚“¶VÇ6R–b‚W†—7F–æt6öö¶–T6†ö–6R–6öö¶–T&ææW"æ†–FFVãÖfÇ6S°Ð¢Fö7VÖVçBçVW'•6VÆV7F÷"‚r666WBÖ6öö¶–W2r’æöæ6Æ–6³Ò‚“Óç6fT6öö¶–T6†ö–6R‚v66WFVBr“°Ð¢Fö7VÖVçBçVW'•6VÆV7F÷"‚r7&V¦V7BÖ6öö¶–W2r’æöæ6Æ–6³Ò‚“Óç6fT6öö¶–T6†ö–6R‚w&V¦V7FVBr“°Ð¢Fö7VÖVçBçVW'•6VÆV7F÷"‚r66öö¶–R×6WGF–æw2r’æöæ6Æ–6³Ò‚“Óç¶6öö¶–T&ææW"æ†–FFVãÖfÇ6WÓ°Ð¢6öç7Bv†G6Ò†ÖW76vR“Óçv–æF÷ræ÷Vâ†‡GG3¢ò÷væÖRòGµtÓ÷FW‡CÒG¶Væ6öFUU$”6ö×öæVçB†ÖW76vR—ÖÂuö&Ææ²rÂvæö÷VæW"Ææ÷&VfW'&W"r“°Ð¢7–æ2gVæ7F–öâÆöDöffW'2‚—¶6öç7BF&vWCÖFö7VÖVçBçVW'•6VÆV7F÷"‚r67F—fRÖöffW"r“¶–b‚F&vWB—&WGW&ã·G'—¶6öç7BöffW'3Öv—Bv–æF÷räFVW544&6¶VæBæÆ—7EV&Æ–4öffW'2‚’ÆöffW#ÖöffW'3òå³Ó¶–b‚öffW"—&WGW&ã¶6öç7B–ææW#ÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vF—br“¶–ææW"æ6Æ74æÖSÒvöffW"Ö&ææW"Ö–ææW"s¶6öç7B6÷“ÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vF—br“¶6÷’æ6Æ74æÖSÒvöffW"Ö&ææW"Ö6÷’s¶6öç7B¶–6¶W#ÖFö7VÖVçBæ7&VFTVÆVÖVçB‚w7âr“¶¶–6¶W"æ6Æ74æÖSÒvöffW"Ö&ææW"Ö¶–6¶W"s¶¶–6¶W"çFW‡D6öçFVçCÒu4T4ôäÂTä¤"542ôddU"s¶6öç7BF—FÆSÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vƒ"r“·F—FÆRçFW‡D6öçFVçCÖöffW"çF—FÆS¶6öç7BFW67&—F–öãÖFö7VÖVçBæ7&VFTVÆVÖVçB‚wr“¶FW67&—F–öâçFW‡D6öçFVçCÖöffW"æÖW76vS¶6÷’æVæB†¶–6¶W"ÇF—FÆRÆFW67&—F–öâ“¶–ææW"æVæB†6÷’“¶–b†öffW"æ'WGFöåöÆ&VÂ—¶6öç7B7F–öãÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vr“¶7F–öâæ‡&VcÖ‡GG3¢ò÷væÖRòGµtÓ÷FW‡CÒG¶Væ6öFUU$”6ö×öæVçB†’v÷VÆBÆ–¶RFWF–Ç2&÷WC¢G¶öffW"çF—FÆWÖ—Ö¶7F–öâçF&vWCÒuö&Ææ²s¶7F–öâç&VÃÒvæö÷VæW"æ÷&VfW'&W"s¶7F–öâçFW‡D6öçFVçCÖöffW"æ'WGFöåöÆ&VÃ¶–ææW"æVæB†7F–öâ—×F&vWBç&WÆ6T6†–ÆG&Vâ†–ææW"“·F&vWBæ†–FFVãÖfÇ6WÖ6F6‡·F&vWBæ†–FFVã×G'VW×Ó°Ð¢6öç7B÷VãÒ†‡FÖÂ“Óç¶ÖöFÂæ6Æ74Æ—7Bç&VÖ÷fR‚vWF‚ÖF–ÆörrÂv÷væW"ÖF–ÆörrÂv÷GÖF–ÆörrÂv6†V6¶÷WBÖF–Æörr“¶&öG’æ–ææW$…DÔÃÖ‡FÖÃ¶–b‚ÖöFÂæ÷Vâ–ÖöFÂç6†÷tÖöFÂ‚—Ó°Ð¢Fö7VÖVçBçVW'•6VÆV7F÷"‚ræÖöFÂÖ6Æ÷6Rr’æFDWfVçDÆ—7FVæW"‚v6Æ–6²rÂ‚“ÓæÖöFÂæ6Æ÷6R‚’“°Ð¢ÖöFÂæFDWfVçDÆ—7FVæW"‚v6Æ–6²rÂ†WfVçB“Óç¶–b†WfVçBçF&vWCÓÓÖÖöFÂ–ÖöFÂæ6Æ÷6R‚—Ò“°Ð¢6öç7BÖö&–ÆTÖVçSÖFö7VÖVçBçVW'•6VÆV7F÷"‚r6Öö&–ÆRÖÖVçRr’ÆÖ–äæcÖFö7VÖVçBçVW'•6VÆV7F÷"‚r6Ö–âÖæbr“°Ð¢Öö&–ÆTÖVçRæöæ6Æ–6³Ò‚“Óç¶6öç7BW‡æFVCÖÖö&–ÆTÖVçRævWDGG&–'WFR‚v&–ÖW‡æFVBr“ÓÓÒwG'VRs¶Öö&–ÆTÖVçRç6WDGG&–'WFR‚v&–ÖW‡æFVBrÅ7G&–ær‚W‡æFVB’“¶Ö–äæbæ6Æ74Æ—7BçFövvÆR‚v—2Ö÷VârÂW‡æFVB—Ó°Ð¢Ö–äæbçVW'•6VÆV7F÷$ÆÂ‚vr’æf÷$V6‚‚†Æ–æ²“ÓæÆ–æ²æöæ6Æ–6³Ò‚“Óç¶Ö–äæbæ6Æ74Æ—7Bç&VÖ÷fR‚v—2Ö÷Vâr“¶Öö&–ÆTÖVçRç6WDGG&–'WFR‚v&–ÖW‡æFVBrÂvfÇ6Rr—Ò“°Ð Ð¢6öç7Bw&–CÖFö7VÖVçBçVW'•6VÆV7F÷"‚r6Fö7VÖVçBÖw&–Br’ÆÆWGFW'3ÖFö7VÖVçBçVW'•6VÆV7F÷"‚r6ÆWGFW'2r“¶ÆWB7W'&VçDÆæwVvSÒvVârÆ7F—fTÆWGFW#ÒrrÇ6W'f–6UVW'“Òrs°Ð¢6öç7B6W'f–6U6V&6ƒÖFö7VÖVçBçVW'•6VÆV7F÷"‚r76W'f–6R×6V&6‚r’Ç6V&6„fVVF&6³ÖFö7VÖVçBçVW'•6VÆV7F÷"‚r76W'f–6R×6V&6‚ÖfVVF&6²r“°Ð¢6öç7B6V&6„6÷“×¶Vã§¶f÷VæC¢†6÷VçB“ÓæG¶6÷VçGÒ6W'f–6RG¶6÷VçCÓÓÓòrs¢w2wÒf÷VæBæÆæöæS¢tæòÖF6†–ær6W'f–6Rf÷VæBâG'’æ÷F†W"6V&6‚ârÆÆWGFW#¢†6÷VçBÆÆWGFW"“ÓæG¶6÷VçGÒ6W'f–6RG¶6÷VçCÓÓÓòrs¢w2wÒVæFW"G¶ÆWGFW'ÒæÒÇ§¶f÷VæC¢†6÷VçB“ÓæG¶6÷VçGÒ
+‹Ž
+˜~
+‹^
+‹î
+‹^
+‹î
+ˆ"
+Šî
+‹þ
+‹.
+˜
+ˆn
+ˆ.
+ZFÆæöæS¢~
+‰^
+˜¾
+ˆ‚
+Šî
+‹þ
+‹.
+Šn
+˜
+‹Ž
+˜~
+‹^
+‹â
+ŠŽ
+‹ž
+˜
+ˆ"
+‹.
+›
+ŠÞ
+˜
+ZB
+‹ž
+˜¾
+‹
+‹Ž
+‹Î
+ŠÎ
+Šb
+ŠŽ
+‹î
+‹"
+‰n
+˜¾
+‰Î
+˜¾
+ZBrÆÆWGFW#¢†6÷VçBÆÆWGFW"“ÓæG¶ÆWGFW'Ò
+‹ž
+˜~
+ŠG¶6÷VçGÒ
+‹Ž
+˜~
+‹^
+‹î
+‹^
+‹î
+ˆ"
+Šn
+‹þ
+‰n
+‹î
+ˆŽ
+ˆn
+ˆ"
+‰Î
+‹â
+‹
+‹ž
+˜
+ˆn
+ˆ"
+‹ž
+ŠŽ
+ZFÒÆ†“§¶f÷VæC¢†6÷VçB“ÓæG¶6÷VçGÒ
+KŽ
+X~
+K^
+Kî
+Hþ
+H
+Jî
+Kþ
+K.
+X
+H.
+ZFÆæöæS¢~
+I^
+X¾
+H‚
+Jî
+Kþ
+K.
+JN
+X
+KŽ
+X~
+K^
+Kâ
+JŽ
+Kž
+X
+H"
+Jî
+Kþ
+K.
+X
+ZB
+Jn
+X.
+KŽ
+K
+Kâ
+Kn
+JÎ
+XÞ
+Jb
+In
+X¾
+IÎ
+X~
+H.
+ZBrÆÆWGFW#¢†6÷VçBÆÆWGFW"“ÓæG¶ÆWGFW'Ò
+I^
+Xr
+H^
+H.
+JN
+K
+XÞ
+I~
+JBG¶6÷VçGÒ
+KŽ
+X~
+K^
+Kî
+Hþ
+H
+Jn
+Kþ
+In
+Kî
+H‚
+IÎ
+Kâ
+K
+Kž
+X
+Kž
+XŽ
+H.
+ZF×Ó°Ð¢6öç7Bff÷&—FT—56fVCÒ†æÖR“Óç·G'—·&WGW&âÆö6Å7F÷&vRævWD—FVÒ†FVWÖfbÒG¶æÖWÖ“ÓÓÒswÖ6F6‡·&WGW&âfÇ6W×Ó°Ð¢6öç7B6fTff÷&—FSÒ†æÖRÇ6fVB“Óç·G'—¶Æö6Å7F÷&vRç6WD—FVÒ†FVWÖfbÒG¶æÖWÖÇ6fVCòss¢sr—Ö6F6‡·×Ó°Ð¢6öç7BG&sÒ‚“Óç°Ð¢6öç7BVW'“×6W'f–6UVW'’ææ÷&ÖÆ—¦R‚täd´2r’çFôÆö6ÆTÆ÷vW$66R‚“°Ð¢6öç7Bf÷VæC×6W'f–6W2æf–ÇFW"‚…¶¶W’ÆæÖRÆFW67&—F–öåÒ“Óâ‚7F—fTÆWGFW'ÇÆ¶W“ÓÓÖ7F—fTÆWGFW"’bb‚VW'—ÇÆG¶¶W—ÒG¶æÖWÒG¶FW67&—F–öçÖææ÷&ÖÆ—¦R‚täd´2r’çFôÆö6ÆTÆ÷vW$66R‚’æ–æ6ÇVFW2‡VW'’’’’ç6÷'B‚†Æ"“Óæ³ÒæÆö6ÆT6ö×&R†%³Ò’“°Ð¢w&–Bç&WÆ6T6†–ÆG&Vâ‚“°Ð¢6öç7BÖW76vW3×6V&6„6÷•¶7W'&VçDÆæwVvU×ÇÇ6V&6„6÷’æVã°Ð¢6V&6„fVVF&6²çFW‡D6öçFVçC×6W'f–6UVW'“ò†f÷VæBæÆVæwFƒöÖW76vW2æf÷VæB†f÷VæBæÆVæwF‚“¦ÖW76vW2ææöæR“¢†7F—fTÆWGFW#öÖW76vW2æÆWGFW"†f÷VæBæÆVæwF‚Æ7F—fTÆWGFW"“¢rr“°Ð¢f÷VæBæf÷$V6‚‚…¶¶W’ÆæÖRÆFW65ÒÆ–æFW‚“Óç°Ð¢6öç7B6&CÖFö7VÖVçBæ7&VFTVÆVÖVçB‚v'F–6ÆRr“¶6&Bæ6Æ74æÖSÒvFö7VÖVçBÖ6&Bs¶6&Bç7G–ÆRææ–ÖF–öäFVÆ“ÖG´ÖF‚æÖ–â†–æFW‚Ã‚’£3Ö×6°Ð¢6öç7Bff÷&—FSÖFö7VÖVçBæ7&VFTVÆVÖVçB‚v'WGFöâr“¶ff÷&—FRæ6Æ74æÖSÒvFö2Öff÷W&—FRs¶ff÷&—FRçG—SÒv'WGFöâs¶ff÷&—FRçFW‡D6öçFVçCÖff÷&—FT—56fVB†æÖR“ò~)šRs¢~)šs¶–b†ff÷&—FRçFW‡D6öçFVçCÓÓÒ~)šRr–ff÷&—FRæ6Æ74Æ—7BæFB‚v7F—fRr“¶ff÷&—FRç6WDGG&–'WFR‚v&–ÖÆ&VÂrÆ6fRG¶æÖWÖ“¶ff÷&—FRæöæ6Æ–6³Ò‚“Óç¶6öç7B6fVCÖff÷&—FRæ6Æ74Æ—7BçFövvÆR‚v7F—fRr“¶ff÷&—FRçFW‡D6öçFVçC×6fVCò~)šRs¢~)šs·6fTff÷&—FR†æÖRÇ6fVB—Ó°Ð¢6öç7BÆWGFW%FsÖFö7VÖVçBæ7&VFTVÆVÖVçB‚w7âr“¶ÆWGFW%Fræ6Æ74æÖSÒvFö2ÖÆWGFW"s¶ÆWGFW%FrçFW‡D6öçFVçCÖ¶W“°Ð¢6öç7BF—FÆSÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vƒ2r“·F—FÆRçFW‡D6öçFVçCÖæÖS°Ð¢6öç7BFW67&—F–öãÖFö7VÖVçBæ7&VFTVÆVÖVçB‚wr“¶FW67&—F–öâçFW‡D6öçFVçCÖFW63°Ð¢6öç7BfVSÖFö7VÖVçBæ7&VFTVÆVÖVçB‚wr“¶fVRæ6Æ74æÖSÒvfVRÖÆ&VÂs¶fVRçFW‡D6öçFVçCÒtf–æÂfVR6öæf—&ÖVBgFW"&Wf–Wrs°Ð¢6öç7B'WGFöãÖFö7VÖVçBæ7&VFTVÆVÖVçB‚v'WGFöâr“¶'WGFöâæ6Æ74æÖSÒv'WGFöâs¶'WGFöâçG—SÒv'WGFöâs¶'WGFöâçFW‡D6öçFVçC×G%¶7W'&VçDÆæwVvUÒæÇ”'WGFöã¶'WGFöâæöæ6Æ–6³Ò‚“ÓæÇ’†æÖRÆFW62“°Ð¢6&BæVæB†ff÷&—FRÆÆWGFW%FrÇF—FÆRÆFW67&—F–öâÆfVRÆ'WGFöâ“¶w&–BæVæB†6&B“°Ð¢Ò“°Ð¢–b‚f÷VæBæÆVæwF‚—¶6öç7BV×G“ÖFö7VÖVçBæ7&VFTVÆVÖVçB‚wr“¶V×G’æ6Æ74æÖSÒvf–æW&–çBs¶V×G’çFW‡D6öçFVçC×6W'f–6UVW'“öÖW76vW2ææöæS¢tæò6W'f–6W2VæFW"F†—2ÆWGFW"–WBâv†G4Væ¦"542æBvRv–ÆÂ†VÇ–÷Râs¶w&–BæVæB†V×G’—ÐÐ¢Ó°Ð¢6öç7Bf–ÇFW$'”ÆWGFW#Ò†ÆWGFW"“Óç¶7F—fTÆWGFW#ÖÆWGFW#¶Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚r6ÆWGFW'2'WGFöâr’æf÷$V6‚‚†'WGFöâ“Óæ'WGFöâæ6Æ74Æ—7BçFövvÆR‚v7F—fRrÆ'WGFöâæFF6WBæÆWGFW#ÓÓÖÆWGFW"’“¶G&r‚—Ó°Ð¢ÆWGFW'2æ–ææW$…DÔÃÒsÆ'WGFöâG—SÒ&'WGFöâ"FFÖÆWGFW#Ò"#äÆÃÂö'WGFöãâr´'&’æg&öÒ‚t$4DTdt„”¤´ÄÔäõ%5EUeu…•¢rÆÆWGFW#ÓæÆ'WGFöâG—SÒ&'WGFöâ"FFÖÆWGFW#Ò"G¶ÆWGFW'Ò#âG¶ÆWGFW'ÓÂö'WGFöãæ’æ¦ö–â‚rr“°Ð¢ÆWGFW'2çVW'•6VÆV7F÷$ÆÂ‚v'WGFöâr’æf÷$V6‚‚†'WGFöâ“Óæ'WGFöâæöæ6Æ–6³Ò‚“Óæf–ÇFW$'”ÆWGFW"†'WGFöâæFF6WBæÆWGFW"’“¶ÆWGFW'2æf—'7DVÆVÖVçD6†–ÆBæ6Æ74Æ—7BæFB‚v7F—fRr“°Ð¢6W'f–6U6V&6‚æFDWfVçDÆ—7FVæW"‚v–çWBrÂ‚“Óç·6W'f–6UVW'“×6W'f–6U6V&6‚çfÇVRçG&–Ò‚“¶–b‡6W'f–6UVW'’—¶7F—fTÆWGFW#Òrs¶ÆWGFW'2çVW'•6VÆV7F÷$ÆÂ‚v'WGFöâr’æf÷$V6‚‚†'WGFöâ“Óæ'WGFöâæ6Æ74Æ—7BçFövvÆR‚v7F—fRrÆ'WGFöâæFF6WBæÆWGFW#ÓÓÒrr’—ÖG&r‚—Ò“°Ð¢G&r‚“°Ð Ð¢gVæ7F–öâÇ’†æÖRÆFW67&—F–öâ—°Ð¢6öç7Bf&–çD÷F–öç3×&WV—&VÖVçEf&–çD÷F–öç2†æÖR“¶ÆWB6VÆV7FVEf&–çC×f&–çD÷F–öç5³Óòå³×ÇÂrs¶ÆWB&WV—&VÖVçG3×&WV—&VÖVçG4f÷"†æÖRÇ6VÆV7FVEf&–çB“¶6öç7B7W'&VçEf&–çDÆ&VÃÒ‚“Óçf&–çD÷F–öç2æf–æB‚…·fÇVUÒ“ÓçfÇVSÓÓ×6VÆV7FVEf&–çB“òå³×ÇÂtæ÷BÆ–6&ÆRs°Ð¢6öç7B—4¦ö$Æ–6F–öãÒõÆ"†¦ö'Ç&V7'V—FÖVçGÇ÷7B•Æ"ö’çFW7B†æÖR“°Ð¢6öç7B¦ö$6÷“×°Ð¢Vã§·WÆöDÆ&VÃ¢t¦ö"ò÷7Bæ÷F–6RÂGfW'F—6VÖVçB÷"f÷&ÒrÆFWF–Ç4†VF–æs¢t¦ö"ò÷7BFWF–Ç2rÇF—FÆS¢t¦ö"ò÷7BÆ–6F–öâFWF–Ç2rÆæ÷FS¢uw&—FRBÆV7BSv÷&G2â–æ6ÇVFRF†R÷7BÂFW'FÖVçBÂGfW'F—6VÖVçBçVÖ&W"ÂFVFÆ–æRæBF†R†VÇ–÷RæVVBârÇÆ6V†öÆFW#¢tFW67&–&RF†R¦ö"÷"÷7B–÷RvçBFòÇ’f÷"âFBF†RW†7B÷7BæÖRÂFW'FÖVçBÂGfW'F—6VÖVçBçVÖ&W"ÂFVFÆ–æRÂVÆ–f–6F–öç2æBç’–ç7G'V7F–öç2ƒSv÷&G2Ö–æ–×VÒ’ârÇv÷&G3¢wv÷&G2rÆW'&÷#¢†6÷VçB“Óæw&—FRBÆV7BSv÷&G2&Vf÷&R&Wf–Wrâ7W'&VçB6÷VçC¢G¶6÷VçGÒæÒÀÐ¢§·WÆöDÆ&VÃ¢~
+ŠŽ
+˜Î
+‰^
+‹
+˜ò
+Š®
+˜¾
+‹Ž
+‰ò
+Šn
+‹â
+ŠŽ
+˜¾
+‰þ
+‹þ
+‹‚Â
+ˆ~
+‹Ž
+‹Î
+ŠN
+‹þ
+‹ž
+‹î
+‹
+‰Î
+‹î
+ˆ"
+Š¾
+‹î
+‹
+ŠârÆFWF–Ç4†VF–æs¢~
+ŠŽ
+˜Î
+‰^
+‹
+˜ò
+Š®
+˜¾
+‹Ž
+‰ò
+Šn
+‹â
+‹^
+˜~
+‹
+‹^
+‹ârÇF—FÆS¢~
+ŠŽ
+˜Î
+‰^
+‹
+˜ò
+Š®
+˜¾
+‹Ž
+‰ò
+ˆ^
+‹
+‰Î
+‹Î
+˜
+Šn
+‹â
+‹^
+˜~
+‹
+‹^
+‹ârÆæ÷FS¢~
+‰Ž
+›
+‰þ
+˜²Þ
+‰Ž
+›
+‰òS
+‹Ž
+‹Î
+ŠÎ
+Šb
+‹.
+‹þ
+‰n
+˜¾
+ZB
+Š®
+˜¾
+‹Ž
+‰òÂ
+‹^
+‹þ
+ŠÞ
+‹î
+‰rÂ
+ˆ~
+‹Ž
+‹Î
+ŠN
+‹þ
+‹ž
+‹î
+‹
+ŠŽ
+›
+ŠÎ
+‹Â
+ˆn
+‰n
+‹Î
+‹
+˜
+Šî
+‹þ
+ŠN
+˜
+ˆ^
+ŠN
+˜r
+ŠN
+˜
+‹ž
+‹î
+ŠŽ
+˜.
+›
+‰^
+‹þ
+‹ž
+™Î
+˜
+Šî
+Šn
+Šb
+‰®
+‹î
+‹ž
+˜
+Šn
+˜
+‹ž
+˜Ž(	N
+ˆ~
+‹’
+Šn
+›
+‹Ž
+˜¾
+ZBrÇÆ6V†öÆFW#¢~
+‰Î
+‹þ
+‹‚
+ŠŽ
+˜Î
+‰^
+‹
+˜
+‰Î
+‹î
+ˆ"
+Š®
+˜¾
+‹Ž
+‰ò
+‹.
+ˆ‚
+ˆ^
+‹
+‰Î
+‹Î
+˜
+Šn
+˜~
+Š>
+˜
+‹ž
+˜‚Â
+ˆž
+‹Ž
+Šn
+‹â
+Š®
+˜.
+‹
+‹â
+ŠŽ
+‹î
+ŠâÂ
+‹^
+‹þ
+ŠÞ
+‹î
+‰rÂ
+ˆ~
+‹Ž
+‹Î
+ŠN
+‹þ
+‹ž
+‹î
+‹
+ŠŽ
+›
+ŠÎ
+‹Â
+ˆn
+‰n
+‹Î
+‹
+˜
+Šî
+‹þ
+ŠN
+˜Â
+Šþ
+˜¾
+‰~
+ŠN
+‹â
+ˆ^
+ŠN
+˜r
+‹ž
+Šn
+‹î
+ˆ~
+ŠN
+‹î
+ˆ"
+‹.
+‹þ
+‰n
+˜²Ž
+‰Ž
+›
+‰þ
+˜²Þ
+‰Ž
+›
+‰òS
+‹Ž
+‹Î
+ŠÎ
+Šbž
+ZBrÇv÷&G3¢~
+‹Ž
+‹Î
+ŠÎ
+ŠbrÆW'&÷#¢†6÷VçB“Óæ
+‰Î
+‹î
+ˆ.
+‰¢
+ŠN
+˜¾
+ˆ"
+Š®
+‹ž
+‹þ
+‹.
+‹î
+ˆ"
+‰Ž
+›
+‰þ
+˜²Þ
+‰Ž
+›
+‰òS
+‹Ž
+‹Î
+ŠÎ
+Šb
+‹.
+‹þ
+‰n
+˜¾
+ZB
+‹ž
+˜
+Š2G¶6÷VçGÒ
+‹Ž
+‹Î
+ŠÎ
+Šb
+‹ž
+ŠŽ
+ZFÒÀÐ¢†“§·WÆöDÆ&VÃ¢~
+JŽ
+XÎ
+I^
+K
+Xò
+J®
+X¾
+KŽ
+XÞ
+Iò
+I^
+Kâ
+JŽ
+X¾
+Iþ
+Kþ
+K‚Â
+K^
+Kþ
+IÎ
+XÞ
+Iî
+Kî
+J®
+J‚
+Jþ
+Kâ
+J¾
+Xž
+K
+XÞ
+JârÆFWF–Ç4†VF–æs¢~
+JŽ
+XÎ
+I^
+K
+Xò
+J®
+X¾
+KŽ
+XÞ
+Iò
+I^
+Kâ
+K^
+Kþ
+K^
+K
+J2rÇF—FÆS¢~
+JŽ
+XÎ
+I^
+K
+Xò
+J®
+X¾
+KŽ
+XÞ
+Iò
+Hn
+K^
+X~
+Jn
+J‚
+I^
+Kâ
+K^
+Kþ
+K^
+K
+J2rÆæ÷FS¢~
+I^
+Jâ
+KŽ
+Xr
+I^
+JâS
+Kn
+JÎ
+XÞ
+Jb
+K.
+Kþ
+In
+X~
+H.
+ZB
+J®
+X¾
+KŽ
+XÞ
+IòÂ
+K^
+Kþ
+JÞ
+Kî
+IrÂ
+K^
+Kþ
+IÎ
+XÞ
+Iî
+Kî
+J®
+J‚
+KŽ
+H.
+In
+XÞ
+Jþ
+KâÂ
+H^
+H.
+JN
+Kþ
+Jâ
+JN
+Kî
+K
+X
+Ib
+IN
+K
+Hn
+J®
+I^
+X²
+I^
+Kþ
+K‚
+Jî
+Jn
+Jb
+I^
+X
+IÎ
+KÎ
+K
+X.
+K
+JB
+Kž
+X‚Â
+Jþ
+K’
+JÎ
+JN
+Kî
+Hþ
+H.
+ZBrÇÆ6V†öÆFW#¢~
+IÎ
+Kþ
+K‚
+JŽ
+XÎ
+I^
+K
+X
+Jþ
+Kâ
+J®
+X¾
+KŽ
+XÞ
+Iò
+I^
+Xr
+K.
+Kþ
+Hò
+Hn
+K^
+X~
+Jn
+J‚
+I^
+K
+JŽ
+Kâ
+Kž
+X‚
+Hž
+KŽ
+I^
+Kâ
+JŽ
+Kî
+JâÂ
+K^
+Kþ
+JÞ
+Kî
+IrÂ
+K^
+Kþ
+IÎ
+XÞ
+Iî
+Kî
+J®
+J‚
+KŽ
+H.
+In
+XÞ
+Jþ
+KâÂ
+H^
+H.
+JN
+Kþ
+Jâ
+JN
+Kî
+K
+X
+IbÂ
+Jþ
+X¾
+I~
+XÞ
+Jþ
+JN
+Kâ
+IN
+K
+JŽ
+Kþ
+K
+XÞ
+Jn
+X~
+Kb
+K.
+Kþ
+In
+X~
+H"Ž
+I^
+Jâ
+KŽ
+Xr
+I^
+JâS
+Kn
+JÎ
+XÞ
+Jbž
+ZBrÇv÷&G3¢~
+Kn
+JÎ
+XÞ
+JbrÆW'&÷#¢†6÷VçB“Óæ
+IÎ
+Kî
+H
+I¢
+KŽ
+Xr
+J®
+Kž
+K.
+Xr
+I^
+Jâ
+KŽ
+Xr
+I^
+JâS
+Kn
+JÎ
+XÞ
+Jb
+K.
+Kþ
+In
+X~
+H.
+ZB
+H^
+JÞ
+XG¶6÷VçGÒ
+Kn
+JÎ
+XÞ
+Jb
+Kž
+XŽ
+H.
+ZFÐÐ¢Õ¶7W'&VçDÆæwVvUÓ°Ð¢6öç7B&WV—&VÖVçD6÷“×°Ð¢Vã§¶66TÆ&VÃ¢tÆ–6F–öâG—RrÆ6†V6¶Æ—7C¢tv÷fW&æÖVçBFö7VÖVçB6†V6¶Æ—7BrÇWÆöEF—FÆS¢uWÆöBV6‚Fö7VÖVçBrÇ&WV—&VC¢tÖæFF÷'’rÆ6öæF—F–öæÃ¢t–bÆ–6&ÆRrÇfW&–f–VC¢töff–6–Â6W'f–6R6†V6¶Æ—7BrÆ6öæf—&Ó¢töff–6–Â6÷W&6S²W†7B66RæVVG26öæf—&ÖF–öârÆæõWÆöC¢tæòFö7VÖVçBf–ÆRWÆöB—2Æ—7FVBf÷"F†—27FWâ'&–ærF†RFWF–Ç2ò÷&–v–æÂFö7VÖVçG2FòVæ¦"542æBföÆÆ÷rF†Röff–6–Â÷'FÂfW&–f–6F–öâârÆf–ÆT†–çC¢uWÆöB6ÆV"66âg&öÒF†R÷&–v–æÂârÆ÷F–öæÄ†–çC¢uWÆöBöæÇ’–bF†—2Æ–W2Fò–÷W"66RârÆf÷&ÖG3¢t¥rÂär÷"DbrÆÆ–Ö—C¢wWFòÔ"wÒÀÐ¢§¶66TÆ&VÃ¢~
+ˆ^
+‹
+‰Î
+‹Î
+˜
+Šn
+˜
+‰^
+‹þ
+‹Ž
+ŠârÆ6†V6¶Æ—7C¢~
+‹Ž
+‹
+‰^
+‹î
+‹
+˜
+Šn
+‹Ž
+ŠN
+‹î
+‹^
+˜~
+‰Î
+‹Î
+‹î
+ˆ"
+Šn
+˜
+‹Ž
+˜.
+‰®
+˜rÇWÆöEF—FÆS¢~
+‹ž
+‹
+Šn
+‹Ž
+ŠN
+‹î
+‹^
+˜~
+‰Î
+‹Â
+ˆ^
+›
+Š®
+‹.
+˜¾
+Š
+‰^
+‹
+˜²rÇ&WV—&VC¢~
+‹.
+‹î
+‰Î
+‹Î
+Šî
+˜rÆ6öæF—F–öæÃ¢~
+‰Î
+˜r
+‹.
+‹î
+‰~
+˜"
+‹ž
+˜¾
+‹^
+˜rrÇfW&–f–VC¢~
+‹Ž
+‹
+‰^
+‹î
+‹
+˜
+‹Ž
+˜~
+‹^
+‹â
+Šn
+˜
+‹Ž
+˜.
+‰®
+˜rÆ6öæf—&Ó¢~
+‹Ž
+‹
+‰^
+‹î
+‹
+˜
+‹Ž
+‹
+˜¾
+ŠB(	B
+‰^
+˜~
+‹‚
+ˆ^
+ŠŽ
+˜
+‹Ž
+‹î
+‹
+Š®
+˜
+‹Ž
+‹Î
+‰þ
+˜
+‰^
+‹
+˜²rÆæõWÆöC¢~
+ˆ~
+‹‚
+‰^
+Šn
+Šâ
+‹.
+ˆ‚
+Š¾
+‹î
+ˆŽ
+‹"
+ˆ^
+›
+Š®
+‹.
+˜¾
+Š
+ŠŽ
+‹ž
+˜
+ˆ"
+Šn
+‹þ
+‰n
+‹î
+ˆ‚
+‰~
+ˆŽ
+ZB
+‹^
+˜~
+‹
+‹^
+˜rò
+ˆ^
+‹Ž
+‹"
+Šn
+‹Ž
+ŠN
+‹î
+‹^
+˜~
+‰Î
+‹ÂVæ¦"542
+‹.
+‹þ
+ˆn
+‰2
+ˆ^
+ŠN
+˜r
+‹Ž
+‹
+‰^
+‹î
+‹
+˜
+Š®
+˜¾
+‹
+‰þ
+‹"
+Šn
+˜
+‹ž
+Šn
+‹î
+ˆ~
+ŠB
+Šî
+›
+ŠŽ
+˜¾
+ZBrÆf–ÆT†–çC¢~
+ˆ^
+‹Ž
+‹"
+Šn
+‹Ž
+ŠN
+‹î
+‹^
+˜~
+‰Î
+‹Â
+Šn
+˜
+‹Ž
+‹î
+Š¾
+‹Â
+‹Ž
+‰^
+˜Ž
+Š‚
+ˆ^
+›
+Š®
+‹.
+˜¾
+Š
+‰^
+‹
+˜¾
+ZBrÆ÷F–öæÄ†–çC¢~
+‹Ž
+‹þ
+‹
+Š¾
+‹Â
+ˆn
+Š®
+Š>
+˜r
+‰^
+˜~
+‹‚
+‹^
+‹þ
+›
+‰¢
+‹.
+‹î
+‰~
+˜"
+‹ž
+˜¾
+‹^
+˜r
+ŠN
+‹î
+ˆ"
+ˆ^
+›
+Š®
+‹.
+˜¾
+Š
+‰^
+‹
+˜¾
+ZBrÆf÷&ÖG3¢t¥rÂär
+‰Î
+‹î
+ˆ"DbrÆÆ–Ö—C¢~
+‹^
+›
+Šr
+ŠN
+˜¾
+ˆ"
+‹^
+›
+ŠrÔ"wÒÀÐ¢†“§¶66TÆ&VÃ¢~
+Hn
+K^
+X~
+Jn
+J‚
+I^
+Kâ
+J®
+XÞ
+K
+I^
+Kî
+KrÆ6†V6¶Æ—7C¢~
+KŽ
+K
+I^
+Kî
+K
+X
+Jn
+KŽ
+XÞ
+JN
+Kî
+K^
+X~
+IÎ
+KÎ
+X¾
+H"
+I^
+X
+KŽ
+X.
+I®
+XrÇWÆöEF—FÆS¢~
+Kž
+K
+Jn
+KŽ
+XÞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂ
+H^
+J®
+K.
+X¾
+J
+I^
+K
+X~
+H"rÇ&WV—&VC¢~
+H^
+JŽ
+Kþ
+K^
+Kî
+K
+XÞ
+JòrÆ6öæF—F–öæÃ¢~
+Jþ
+Jn
+Kò
+K.
+Kî
+I~
+X"
+Kž
+X²rÇfW&–f–VC¢~
+KŽ
+K
+I^
+Kî
+K
+X
+KŽ
+X~
+K^
+Kâ
+I^
+X
+KŽ
+X.
+I®
+XrÆ6öæf—&Ó¢~
+KŽ
+K
+I^
+Kî
+K
+X
+KŽ
+XÞ
+K
+X¾
+JB(	B
+Jî
+Kî
+Jî
+K.
+Xr
+I^
+Xr
+H^
+JŽ
+X
+KŽ
+Kî
+K
+J®
+X
+K~
+XÞ
+Iþ
+Kò
+I^
+K
+X~
+H"rÆæõWÆöC¢~
+H~
+K‚
+I®
+K
+J2
+I^
+Xr
+K.
+Kþ
+Hò
+J¾
+KÎ
+Kî
+H~
+K"
+H^
+J®
+K.
+X¾
+J
+JŽ
+Kž
+X
+H"
+Jn
+Kþ
+In
+Kî
+H‚
+I~
+H‚
+Kž
+XŽ
+ZB
+K^
+Kþ
+K^
+K
+J2ò
+Jî
+X.
+K"
+Jn
+KŽ
+XÞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂVæ¦"542
+K.
+Kî
+Hþ
+H
+IN
+K
+Hn
+J~
+Kþ
+I^
+Kî
+K
+Kþ
+IR
+J®
+X¾
+K
+XÞ
+Iþ
+K"
+I^
+Xr
+JŽ
+Kþ
+K
+XÞ
+Jn
+X~
+Kb
+Jî
+Kî
+JŽ
+X~
+H.
+ZBrÆf–ÆT†–çC¢~
+Jî
+X.
+K"
+Jn
+KŽ
+XÞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂ
+I^
+X
+KŽ
+Kî
+J¾
+KÂ
+KŽ
+XÞ
+I^
+XŽ
+J‚
+H^
+J®
+K.
+X¾
+J
+I^
+K
+X~
+H.
+ZBrÆ÷F–öæÄ†–çC¢~
+I^
+X~
+K^
+K"
+Hn
+J®
+I^
+Xr
+Jî
+Kî
+Jî
+K.
+Xr
+Jî
+X~
+H"
+K.
+Kî
+I~
+X"
+Kž
+X²
+JN
+X²
+H^
+J®
+K.
+X¾
+J
+I^
+K
+X~
+H.
+ZBrÆf÷&ÖG3¢t¥rÂär
+Jþ
+KâDbrÆÆ–Ö—C¢~
+H^
+J~
+Kþ
+I^
+JN
+JâÔ"wÐÐ¢Õ¶7W'&VçDÆæwVvU×ÇÇ¶66TÆ&VÃ¢tÆ–6F–öâG—RrÆ6†V6¶Æ—7C¢tv÷fW&æÖVçBFö7VÖVçB6†V6¶Æ—7BrÇWÆöEF—FÆS¢uWÆöBV6‚Fö7VÖVçBrÇ&WV—&VC¢tÖæFF÷'’rÆ6öæF—F–öæÃ¢t–bÆ–6&ÆRrÇfW&–f–VC¢töff–6–Â6W'f–6R6†V6¶Æ—7BrÆ6öæf—&Ó¢töff–6–Â6÷W&6S²W†7B66RæVVG26öæf—&ÖF–öârÆæõWÆöC¢tæòFö7VÖVçBWÆöB—2Æ—7FVBf÷"F†—27FWârÆf–ÆT†–çC¢uWÆöB6ÆV"66âg&öÒF†R÷&–v–æÂârÆ÷F–öæÄ†–çC¢uWÆöBöæÇ’–bF†—2Æ–W2Fò–÷W"66RârÆf÷&ÖG3¢t¥rÂär÷"DbrÆÆ–Ö—C¢wWFòÔ"wÓ°Ð¢6öç7B&WV—&VÖVçE7FGW3Ò‡7FGW2“Óç7FGW3ÓÓÒtÖæFF÷'’s÷&WV—&VÖVçD6÷’ç&WV—&VC§7FGW3ÓÓÒt6öæF—F–öæÂs÷&WV—&VÖVçD6÷’æ6öæF—F–öæÃ§7FGW3°Ð¢6öç7B¦ö$FW67&—F–öäf–VÆCÖ—4¦ö$Æ–6F–öãöÆÆ&VÂ6Æ73Ò&¦ö"ÖFW67&—F–öâÖf–VÆB#âG¶¦ö$6÷’çF—FÆWÓÇFW‡F&VæÖSÒ&¦ö$FW67&—F–öâ"&÷w3Ò#r"&WV—&VBÆ6V†öÆFW#Ò"G¶¦ö$6÷’çÆ6V†öÆFW'Ò#ãÂ÷FW‡F&VãÇ6ÖÆÃâG¶¦ö$6÷’ææ÷FWÒÆ"6Æ73Ò&¦ö"×v÷&BÖ6÷VçB#ãòSG¶¦ö$6÷’çv÷&G7ÓÂö#ãÂ÷6ÖÆÃãÂöÆ&VÃæ¢rs°Ð¢6öç7B‡FÖÄæÖSÖ‡FÖÄW66R†æÖR’Æ‡FÖÄFW67&—F–öãÖ‡FÖÄW66R†FW67&—F–öâ“°Ð¢6öç7Bf&–çDÖ&·W×f&–çD÷F–öç2æÆVæwFƒöÆÆ&VÂ6Æ73Ò'&WV—&VÖVçBÖ66R#âG·&WV—&VÖVçD6÷’æ66TÆ&VÇÓÇ6VÆV7B–CÒ'&WV—&VÖVçB×f&–çB"æÖSÒ&Æ–6F–öåG—R#âG·f&–çD÷F–öç2æÖ‚…·fÇVRÆÆ&VÅÒ“ÓæÆ÷F–öâfÇVSÒ"G¶‡FÖÄW66R‡fÇVR—Ò"G·fÇVSÓÓ×6VÆV7FVEf&–çCòw6VÆV7FVBs¢rwÓâG¶‡FÖÄW66R†Æ&VÂ—ÓÂö÷F–öãæ’æ¦ö–â‚rr—ÓÂ÷6VÆV7CãÂöÆ&VÃæ¢rs°Ð¢6öç7B&VæFW$6†V6¶Æ—7CÒ‚“Óç&WV—&VÖVçG2æFö7VÖVçG2æÖ‚†—FVÒ“ÓæÆÆ“ãÇ7ãâG¶‡FÖÄW66R†—FVÒææÖR—ÓÂ÷7ããÆ"6Æ73Ò&Fö2×7FGW2G¶—FVÒç7FGW3ÓÓÒtÖæFF÷'’sòv—2×&WV—&VBs¢v—2Ö6öæF—F–öæÂwÒ#âG¶‡FÖÄW66R‡&WV—&VÖVçE7FGW2†—FVÒç7FGW2’—ÓÂö#ãÂöÆ“æ’æ¦ö–â‚rr“°Ð¢6öç7B&VæFW%WÆöG3Ò‚“Óç¶6öç7BFö7VÖVçG3×&WV—&VÖVçG2æFö7VÖVçG2æf–ÇFW"‚†—FVÒ“Óæ—FVÒçWÆöB“¶–b‚Fö7VÖVçG2æÆVæwF‚—&WGW&âÇ6Æ73Ò&æò×WÆöBÖæVVFVB#âG·&WV—&VÖVçD6÷’ææõWÆöGÓÂ÷æ·&WGW&âFö7VÖVçG2æÖ‚†—FVÒÆ–æFW‚“Óç¶6öç7BÆ&VÃÖ—4¦ö$Æ–6F–öâbbö¦ö'Ç÷7GÇ&V7'V—FÖVçBö’çFW7B†—FVÒææÖR“ö¦ö$6÷’çWÆöDÆ&VÃ¦—FVÒææÖS¶6öç7BÆ–Ö—CÖ—FVÒæÖ„'—FW3Ã£#B£#CöG´ÖF‚ç&÷VæB†—FVÒæÖ„'—FW2ó#B—Ò´&¦G·&WV—&VÖVçD6÷’æÆ–Ö—GÖ¶6öç7B†–çCÖ—FVÒæf–ÆU&WV—&VC÷&WV—&VÖVçD6÷’æf–ÆT†–çC§&WV—&VÖVçD6÷’æ÷F–öæÄ†–çC·&WGW&âÆÆ&VÂ6Æ73Ò'WÆöB×¦öæR#ãÇ7ããÆ#âG¶‡FÖÄW66R†Æ&VÂ—ÓÂö#ãÇ6ÖÆÃâG¶‡FÖÄW66R‡&WV—&VÖVçE7FGW2†—FVÒç7FGW2’—Ò+rG·&WV—&VÖVçD6÷’æf÷&ÖG7ÒÂG¶Æ–Ö—GÒâG¶†–çGÓÂ÷6ÖÆÃãÂ÷7ããÆ–çWB6Æ73Ò&Fö7VÖVçBÖf–ÆR"æÖSÒ&Fö7VÖVçBÒG¶–æFW‡Ò"G—SÒ&f–ÆR"66WCÒ"æ§rÂæ§VrÂçærÂçFbÆ–ÖvRö§VrÆ–ÖvR÷ærÆÆ–6F–öâ÷Fb"FFÖÖ–âÖ'—FW3Ò"G¶—FVÒæÖ–ä'—FW7Ò"FFÖÖ‚Ö'—FW3Ò"G¶—FVÒæÖ„'—FW7Ò"G¶—FVÒæf–ÆU&WV—&VCòw&WV—&VBs¢rwÓãÇ7â6Æ73Ò'WÆöB×&W7VÇB"†–FFVããÂ÷7ããÂöÆ&VÃæÒ’æ¦ö–â‚rr—Ó°Ð¢6öç7BæVÃÖFö7VÖVçBçVW'•6VÆV7F÷"‚r6Æ–6F–öâ×æVÂr“°Ð¢6öç7BF&–fcÖfVTf÷"†æÖR“°Ð¢6öç7BF&–fdÖ&·W×F&–fcöÇ6V7F–öâ6Æ73Ò&fVR×V÷FR"–CÒ&fVR×V÷FR"†–FFVããÆ#äfVRW7F–ÖFRg&öÒVæ¦"542&FRæ÷FSÂö#ãÆF—b6Æ73Ò&fVRÖ'&V¶F÷vâ#ãÇ7ãäv÷fW&æÖVçBfVRÇ7G&öæsâG¶‡FÖÄW66R‡F&–fbæv÷fW&æÖVçB—ÓÂ÷7G&öæsãÂ÷7ããÇ7ãåVæ¦"5426fRfVRÇ7G&öæsâG¶‡FÖÄW66R‡F&–fbæ6fR—ÓÂ÷7G&öæsãÂ÷7ããÇ7â6Æ73Ò&fVR×F÷FÂ#äÆ—7FVBF÷FÂÇ7G&öæsâG¶‡FÖÄW66R‡F&–fbçF÷FÂ—ÓÂ÷7G&öæsãÂ÷7ããÂöF—cãÇ6ÖÆÃâG·F&–fbæ6W'F–çG“ÓÓÒvÆ—7FVBsòtÆ—7FVBF÷FÂ6÷–VBg&öÒ–÷W"æ÷FS²6öæf—&ÒF†R7W'&VçB÷'FÂÖ÷VçB&Vf÷&R–ÖVçBâs¢u–÷W"æ÷FR†2&ævR÷"Væ6ÆV"F÷FÂâF†—2—2âW7F–ÖFS²6öæf—&ÒF†RW†7B÷'FÂfVRæBf–æÂF÷FÂ&Vf÷&R–ÖVçBâwÓÂ÷6ÖÆÃãÂ÷6V7F–öãæ¦Ç6V7F–öâ6Æ73Ò&fVR×V÷FR"–CÒ&fVR×V÷FR"†–FFVããÆ#äfVRW7F–ÖFSÂö#ãÇäv÷fW&æÖVçB6†&vW2f'’'’Æ–6F–öââVæ¦"542v–ÆÂ6öæf—&ÒF†RW†7Bv÷fW&æÖVçBfVRæB6W'f–6R6†&vRgFW"&Wf–Wv–ær–÷W"Fö7VÖVçG2ãÂ÷ãÂ÷6V7F–öãæ°Ð¢æVÂæ–ææW$…DÔÃÖÆF—b6Æ73Ò&Æ–6F–öâ×æVÂÖ†VB#ãÆF—cãÆF—b6Æ73Ò&W–V'&÷r#å4TÄT5DTB4U%d”4RÆ“ãÂö“ãÂöF—cãÆƒ3âG¶‡FÖÄæÖWÓÂöƒ3ãÇâG¶‡FÖÄFW67&—F–öçÓÂ÷ãÂöF—cãÆ'WGFöâ6Æ73Ò'æVÂÖF—6Ö—72"G—SÒ&'WGFöâ"&–ÖÆ&VÃÒ$6Æ÷6RÆ–6F–öâf÷&Ò#ì9sÂö'WGFöããÂöF—cãÆf÷&Ò6Æ73Ò&Ç’ÖfÆ÷r"–CÒ&Ç’Öf÷&Ò#ãÆF—b6Æ73Ò&fÆ÷r×7FW2#ãÇ7â6Æ73Ò&7F—fR#ã+rFWF–Ç3Â÷7ããÇ7ãã"+rWÆöG3Â÷7ããÇ7ãã2+r&Wf–WsÂ÷7ããÂöF—cãÆF—b6Æ73Ò'&WV—&VÖVçBÖ66R×6Æ÷B#âG·f&–çDÖ&·WÓÂöF—cãÆF—b6Æ73Ò'&WV—&VBÖFö72#ãÆ#âG·&WV—&VÖVçD6÷’æ6†V6¶Æ—7GÓÂö#ãÇVÂ–CÒ'&WV—&VÖVçBÖÆ—7B#âG·&VæFW$6†V6¶Æ—7B‚—ÓÂ÷VÃãÇ6ÖÆÃãÆ–CÒ'&WV—&VÖVçB×6÷W&6R"‡&VcÒ"G¶‡FÖÄW66R‡&WV—&VÖVçG2ç6÷W&6R—Ò"F&vWCÒ%ö&Ææ²"&VÃÒ&æö÷VæW"#âG¶‡FÖÄW66R‡&WV—&VÖVçG2ç6÷W&6TÆ&VÂ—ÓÂöâ+rÇ7â–CÒ'&WV—&VÖVçB×7FGW2#âG·&WV—&VÖVçG2çfW&–f–VC÷&WV—&VÖVçD6÷’çfW&–f–VC§&WV—&VÖVçD6÷’æ6öæf—&×ÓÂ÷7ããÂ÷6ÖÆÃãÇ–CÒ'&WV—&VÖVçBÖæ÷FR#âG¶‡FÖÄW66R‡&WV—&VÖVçG2ææ÷FR—ÓÂ÷ãÂöF—cãÆF—b–CÒ&Æ–6çBÖf–VÆG2#ãÆF—b6Æ73Ò&Æ–6çBÖw&–B#ãÆÆ&VÃå–÷W"æÖSÆ–çWBæÖSÒ&æÖR"&WV—&VBWFö6ö×ÆWFSÒ&æÖR"Æ6V†öÆFW#Ò$gVÆÂæÖR2öâ–÷W"&V6÷&B#ãÂöÆ&VÃãÆÆ&VÃäÖö&–ÆRçVÖ&W#Æ–çWBæÖSÒ&Öö&–ÆR"&WV—&VB–çWFÖöFSÒ&çVÖW&–2"GFW&ãÒ%³Ó•×³Ò"Ö†ÆVæwFƒÒ#"Æ6V†öÆFW#Ò#ÖF–v—BÖö&–ÆRçVÖ&W"#ãÂöÆ&VÃãÆÆ&VÃäVÖ–ÂFG&W72Ç6ÖÆÃâ†÷F–öæÂ“Â÷6ÖÆÃãÆ–çWBæÖSÒ&VÖ–Â"G—SÒ&VÖ–Â"WFö6ö×ÆWFSÒ&VÖ–Â"Æ6V†öÆFW#Ò&æÖTW†×ÆRæ6öÒ#ãÂöÆ&VÃãÂöF—câG¶¦ö$FW67&—F–öäf–VÆGÓÆF—b6Æ73Ò'WÆöBÖÆ—7B#ãÆ#âG·&WV—&VÖVçD6÷’çWÆöEF—FÆWÓÂö#ãÆF—b–CÒ'WÆöBÖf–VÆG2#âG·&VæFW%WÆöG2‚—ÓÂöF—cãÂöF—cãÆÆ&VÂ6Æ73Ò&f÷&ÒÖ6öç6VçB#ãÆ–çWBæÖSÒ&6öç6VçB"G—SÒ&6†V6¶&÷‚"&WV—&VCãÇ7ãä’6öç6VçBFò6VæB×’æÖRÂ6öçF7BFWF–Ç2Â6W'f–6RÂæ÷FW2æBFö7VÖVçBf–ÆRæÖW2FòVæ¦"54>(	—2&WVW7B7—7FVÒf÷"G&6¶–ærâ7GVÂf–ÆW2&R6†&VBöæÇ’v—F‚F†R’6†ö÷6RæB&Ræ÷BWÆöFVBFòF†—2vV'6—FRâ&VBF†RÆ‡&VcÒ&ÆVvÂæ‡FÖÂ7&—f7’"F&vWCÒ%ö&Ææ²"&VÃÒ&æö÷VæW"#å&—f7’öÆ–7“ÂöâæBÆ‡&VcÒ&ÆVvÂæ‡FÖÂ7FW&×2"F&vWCÒ%ö&Ææ²"&VÃÒ&æö÷VæW"#åFW&×2f×²6öæF—F–öç3ÂöâãÂ÷7ããÂöÆ&VÃãÇ6ÖÆÂ6Æ73Ò&Æö6ÂÖf–ÆRÖæ÷FR#å&WVW7BFWF–Ç2&R6fVBf÷"föÆÆ÷r×WgFW"–÷R6†ö÷6R6†&Râ7GVÂ¥rõärõDb6öçFVçG27F’öâ–÷W"FWf–6RæB&R6†&VBöæÇ’v—F‚–÷W"6VÆV7FVB²F†—2vV'6—FRFöW2æ÷B7F÷&RF†Rf–ÆW2ãÂ÷6ÖÆÃâG·F&–fdÖ&·WÓÇ6Æ73Ò'–ÖVçB×7FvRÖæ÷FR#ãÇ7G&öæså–ÖVçB6V7F–öãÂ÷7G&öæsåWÆöBf–ÆW2Fò6VRF†RÆ—7FVBfVRW7F–ÖFRâVæ¦"542&Wf–Ww2F†RFö7VÖVçG2æB6öæf—&×2F†Rf–æÂv÷fW&æÖVçBfVRÇW26W'f–6RfVRâöæÆ–æR–ÖVçB—2æ÷B6öææV7FVB–WBâVæ¦"542v–ÆÂ6öæf—&ÒF†Rf–æÂÖ÷VçBæB–ÖVçBÖWF†öBF—&V7FÇ“²F†—26—FRv–ÆÂæ÷B6öÆÆV7B6&B÷"U’FWF–Ç2ãÂ÷ãÆ'WGFöâ6Æ73Ò&'WGFöâ'WGFöâÖF&²"–CÒ'&Wf–WrÖÆ–6F–öâ"G—SÒ&'WGFöâ#å&Wf–WrÆ–6F–öâÇ7ãî(i#Â÷7ããÂö'WGFöããÂöF—cãÆF—b–CÒ'&Wf–Wr×æVÂ"†–FFVããÆF—b6Æ73Ò'7FGW2Ö6&B#ãÇ7G&öæså&Wf–Wr–÷W"&WVW7CÂ÷7G&öæsãÇ–CÒ'&Wf–WrÖFWF–Ç2#ãÂ÷ãÇVÂ–CÒ'&Wf–WrÖf–ÆW2#ãÂ÷VÃãÇå6†&RF†R6VÆV7FVB¥rõärõDbf–ÆW2v—F‚Væ¦"542B³“s“ƒcb3“C‚âöæÆ–æR–ÖVçB—2æ÷BVæ&ÆVBöâF†—2&VÆV6RâVæ¦"542v–ÆÂ6öæf—&ÒF†Rf–æÂÖ÷VçBæBf–Æ&ÆR–ÖVçBÖWF†öBF—&V7FÇ’ãÂ÷ãÂöF—cãÆF—b6Æ73Ò&fÆ÷rÖ7F–öç2#ãÆ'WGFöâ6Æ73Ò&'WGFöâ'WGFöâ×V–WB"–CÒ&VF—BÖÆ–6F–öâ"G—SÒ&'WGFöâ#ä&6²FòVF—CÂö'WGFöããÆ'WGFöâ6Æ73Ò&'WGFöâ'WGFöâÖF&²6VæBÖ'WGFöâ"–CÒ'6VæBÖÆ–6F–öâ"G—SÒ&'WGFöâ#å6†&Rf–ÆW>(
+bÇ7ãî(isÂ÷7ããÂö'WGFöããÂöF—cãÆF—b–CÒ&f–ÆR×6†&RÖfÆÆ&6²"6Æ73Ò'6†&RÖfÆÆ&6²"†–FFVããÆ#å6†&–ærF–Bæ÷B7F'BãÂö#ãÇä–bF†—2'&÷w6W"6ææ÷B6†&Rf–ÆW2Â÷VâF†RVæ¦"542v†G46†BB³“s“ƒcb3“C‚ÂFF†RW&6Æ—ÂæB6VÆV7BF†R6ÖR¥rõärõDbf–ÆW2g&öÒ–÷W"FWf–6RâF†RÖW76vR&VÆ÷rv–ÆÂæ÷B–æ6ÇVFRf–ÆRæÖW2ãÂ÷ãÆ'WGFöâ–CÒ&ÖçVÂ×v†G6"6Æ73Ò&'WGFöâ'WGFöâ×V–WB"G—SÒ&'WGFöâ#ä÷VâVæ¦"542v†G4Âö'WGFöããÂöF—cãÂöF—cãÂöf÷&Óæ°Ð¢æVÂæ†–FFVãÖfÇ6S°Ð¢6öç7Bf÷&ÓÖæVÂçVW'•6VÆV7F÷"‚r6Ç’Öf÷&Òr“°Ð¢6öç7B&WVW7D6öç6VçEFW‡CÖf÷&ÒçVW'•6VÆV7F÷"‚ræf÷&ÒÖ6öç6VçB7âr“°Ð¢–b‡&WVW7D6öç6VçEFW‡B—&WVW7D6öç6VçEFW‡Bæ–ææW$…DÔÃÒt’w&VRF†BVæ¦"5426â6fR×’&WVW7BFWF–Ç2–â×’66÷VçBf÷"föÆÆ÷r×WâF†R&WVW7B6öçF–ç2×’æÖRÂ†öæRÂVÖ–ÂÂ6VÆV7FVB6W'f–6RæBæ÷FW2âFö7VÖVçBf–ÆW2&R6†&VBöæÇ’gFW"’6†ö÷6R6†&Râ&VBF†RÆ‡&VcÒ&ÆVvÂæ‡FÖÂ7&—f7’"F&vWCÒ%ö&Ææ²"&VÃÒ&æö÷VæW"#å&—f7’öÆ–7“ÂöâæBÆ‡&VcÒ&ÆVvÂæ‡FÖÂ7FW&×2"F&vWCÒ%ö&Ææ²"&VÃÒ&æö÷VæW"#åFW&×2f×²6öæF—F–öç3Âöââs°Ð¢6öç7B6Æ÷VD6öç6VçCÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vÆ&VÂr“¶6Æ÷VD6öç6VçBæ6Æ74æÖSÒvf÷&ÒÖ6öç6VçB6Æ÷VB×7F÷&vRÖ6öç6VçBs°Ð¢6Æ÷VD6öç6VçBæ–ææW$…DÔÃÒsÆ–çWBæÖSÒ'7F÷&Tf–ÆW46öç6VçB"G—SÒ&6†V6¶&÷‚#ãÇ7ãä÷F–öæÃ¢¶VW&—fFR6÷’öbF†R6VÆV7FVB¥rõärõDbf–ÆW2–â×’66÷VçB6ò’6â&Wf–Wr÷"FVÆWFRF†VÒÆFW"âVæ¦"542÷væW"66W72&WV—&W2WF†VçF–6F÷"fW&–f–6F–öââ’6âÆVfRF†—2Væ6†V6¶VBæB7F–ÆÂ6†&Rf–ÆW2F—&V7FÇ’Fòv†G4ãÂ÷7ãâs°Ð¢f÷&ÒçVW'•6VÆV7F÷"‚ræf÷&ÒÖ6öç6VçBr’ægFW"†6Æ÷VD6öç6VçB“°Ð¢6öç7BÆö6Äf–ÆTæ÷FSÖf÷&ÒçVW'•6VÆV7F÷"‚ræÆö6ÂÖf–ÆRÖæ÷FRr“°Ð¢–b†Æö6Äf–ÆTæ÷FR–Æö6Äf–ÆTæ÷FRçFW‡D6öçFVçCÒtf–ÆW27F’öâ–÷W"FWf–6RVæÆW72–÷R6†ö÷6RF†R6W&FR÷F–öæÂ&—fFRÖ6÷’6öç6VçB&÷fRâv†Vâ–÷R6†ö÷6R6†&Rf–ÆW2Â–÷R7F–ÆÂ6VÆV7BF†RF†B&V6V—fW2F†R÷&–v–æÂGF6†ÖVçG2âs°Ð¢6öç7B¦ö$FW67&—F–öãÖf÷&ÒçVW'•6VÆV7F÷"‚u¶æÖSÒ&¦ö$FW67&—F–öâ%Òr“°Ð¢–b†¦ö$FW67&—F–öâ—¶6öç7B6÷VçFW#Öf÷&ÒçVW'•6VÆV7F÷"‚ræ¦ö"×v÷&BÖ6÷VçBr“¶6öç7BWFFUv÷&D6÷VçCÒ‚“Óç¶6öç7Bv÷&G3Ö¦ö$FW67&—F–öâçfÇVRçG&–Ò‚’ç7Æ—B‚õÇ2²ò’æf–ÇFW"„&ööÆVâ’æÆVæwFƒ¶6÷VçFW"çFW‡D6öçFVçCÖG·v÷&G7ÒòSG¶¦ö$6÷’çv÷&G7ÖÓ¶¦ö$FW67&—F–öâæFDWfVçDÆ—7FVæW"‚v–çWBrÇWFFUv÷&D6÷VçB—ÐÐ¢æVÂçVW'•6VÆV7F÷"‚rçæVÂÖF—6Ö—72r’æöæ6Æ–6³Ò‚“Óç¶æVÂæ†–FFVã×G'VS¶æVÂç&WÆ6T6†–ÆG&Vâ‚—Ó°Ð¢6öç7BWFFU&WV—&VÖVçEæVÃÒ‚“Óç¶f÷&ÒçVW'•6VÆV7F÷"‚r7&WV—&VÖVçBÖÆ—7Br’æ–ææW$…DÔÃ×&VæFW$6†V6¶Æ—7B‚“¶f÷&ÒçVW'•6VÆV7F÷"‚r7WÆöBÖf–VÆG2r’æ–ææW$…DÔÃ×&VæFW%WÆöG2‚“¶6öç7B6÷W&6SÖf÷&ÒçVW'•6VÆV7F÷"‚r7&WV—&VÖVçB×6÷W&6Rr“·6÷W&6Ræ‡&Vc×&WV—&VÖVçG2ç6÷W&6S·6÷W&6RçFW‡D6öçFVçC×&WV—&VÖVçG2ç6÷W&6TÆ&VÃ¶f÷&ÒçVW'•6VÆV7F÷"‚r7&WV—&VÖVçB×7FGW2r’çFW‡D6öçFVçC×&WV—&VÖVçG2çfW&–f–VC÷&WV—&VÖVçD6÷’çfW&–f–VC§&WV—&VÖVçD6÷’æ6öæf—&Ó¶f÷&ÒçVW'•6VÆV7F÷"‚r7&WV—&VÖVçBÖæ÷FRr’çFW‡D6öçFVçC×&WV—&VÖVçG2ææ÷FS¶f÷&ÒçVW'•6VÆV7F÷"‚r6fVR×V÷FRr’æ†–FFVã×G'VWÓ°Ð¢f÷&ÒçVW'•6VÆV7F÷"‚r7&WV—&VÖVçB×f&–çBr“òæFDWfVçDÆ—7FVæW"‚v6†ævRrÂ†WfVçB“Óç·6VÆV7FVEf&–çCÖWfVçBæ7W'&VçEF&vWBçfÇVS·&WV—&VÖVçG3×&WV—&VÖVçG4f÷"†æÖRÇ6VÆV7FVEf&–çB“·WFFU&WV—&VÖVçEæVÂ‚—Ò“°Ð¢f÷&ÒæFDWfVçDÆ—7FVæW"‚v6†ævRrÆ7–æ2†WfVçB“Óç¶6öç7B–çWCÖWfVçBçF&vWBæ6Æ÷6W7B‚ræFö7VÖVçBÖf–ÆRr“¶–b‚–çWB—&WGW&ã¶6öç7Bf–ÆSÖ–çWBæf–ÆW5³Ó¶6öç7B&W7VÇCÖ–çWBç&VçDVÆVÖVçBçVW'•6VÆV7F÷"‚rçWÆöB×&W7VÇBr“¶–çWBæFF6WBçfÆ–FFVCÒvfÇ6Rs¶–b‚f–ÆR—·&W7VÇBæ†–FFVã×G'VS¶6öç7B†4f–ÆW3Õ²ââæf÷&ÒçVW'•6VÆV7F÷$ÆÂ‚ræFö7VÖVçBÖf–ÆRr•Òç6öÖR‚†f–ÆT–çWB“Óæf–ÆT–çWBæf–ÆW2æÆVæwF‚bff–ÆT–çWBæFF6WBçfÆ–FFVCÓÓÒwG'VRr“¶f÷&ÒçVW'•6VÆV7F÷"‚r6fVR×V÷FRr’æ†–FFVãÒ†4f–ÆW3·&WGW&ç×&W7VÇBæ†–FFVãÖfÇ6S·&W7VÇBçFW‡D6öçFVçCÒt6†V6¶–ærf–ÆRG—^(
+bs¶6öç7BÖ–ä'—FW3ÔçVÖ&W"†–çWBæFF6WBæÖ–ä'—FW2—ÇÃÆÖ„'—FW3ÔçVÖ&W"†–çWBæFF6WBæÖ„'—FW2—ÇÃ£#B£#C¶ÆWBfÆ–CÖfÇ6S·G'—·fÆ–CÖv—B—57W÷'FVDFö7VÖVçB†f–ÆRÆÖ–ä'—FW2ÆÖ„'—FW2—Ö6F6‡·Ö–b†–çWBæf–ÆW5³ÒÓÖf–ÆR—&WGW&ã¶–b‚fÆ–B—¶–çWBçfÇVSÒrs·&W7VÇBçFW‡D6öçFVçCÖ6†ö÷6RfÆ–B¥rÂär÷"Db&WGvVVâG´ÖF‚æ6V–Â†Ö–ä'—FW2ó#B—Ò´"æBG´ÖF‚æfÆö÷"†Ö„'—FW2ó#B—Ò´"æ¶æ÷F–g’‚t6†ö÷6RfÆ–B¥rõärõDbf–ÆRv—F†–âF†RÆ—7FVB6—¦R&ævRâr—ÖVÇ6W¶–çWBæFF6WBçfÆ–FFVCÒwG'VRs·&W7VÇBçFW‡D6öçFVçCÖ6VÆV7FVC¢G¶f–ÆRææÖWÖÖ6öç7B†4f–ÆW3Õ²ââæf÷&ÒçVW'•6VÆV7F÷$ÆÂ‚ræFö7VÖVçBÖf–ÆRr•Òç6öÖR‚†f–ÆT–çWB“Óæf–ÆT–çWBæf–ÆW2æÆVæwF‚bff–ÆT–çWBæFF6WBçfÆ–FFVCÓÓÒwG'VRr“¶f÷&ÒçVW'•6VÆV7F÷"‚r6fVR×V÷FRr’æ†–FFVãÒ†4f–ÆW3¶–b††4f–ÆW2–f÷&ÒçVW'•6VÆV7F÷$ÆÂ‚ræfÆ÷r×7FW27âr’æf÷$V6‚‚‡7FWÆ–æFW‚“Óç7FWæ6Æ74Æ—7BçFövvÆR‚v7F—fRrÆ–æFWƒÓÓÓ’—Ò“°Ð¢f÷&ÒçVW'•6VÆV7F÷"‚r7&Wf–WrÖÆ–6F–öâr’æöæ6Æ–6³Ò‚“Óç¶–b‚f÷&Òç&W÷'EfÆ–F—G’‚’—&WGW&ã¶6öç7Bv÷&G3Ö¦ö$FW67&—F–öãö¦ö$FW67&—F–öâçfÇVRçG&–Ò‚’ç7Æ—B‚õÇ2²ò’æf–ÇFW"„&ööÆVâ’æÆVæwFƒ£¶–b†¦ö$FW67&—F–öâbgv÷&G3ÃS—¶æ÷F–g’†¦ö$6÷’æW'&÷"‡v÷&G2’“¶¦ö$FW67&—F–öâæfö7W2‚“·&WGW&çÖ6öç7B6VÆV7FVD–çWG3Õ²ââæf÷&ÒçVW'•6VÆV7F÷$ÆÂ‚ræFö7VÖVçBÖf–ÆRr•Òæf–ÇFW"†–çWCÓæ–çWBæf–ÆW2æÆVæwF‚“¶–b‚6VÆV7FVD–çWG2æÆVæwF‚bg&WV—&VÖVçG2æFö7VÖVçG2ç6öÖR†—FVÓÓæ—FVÒçWÆöB’—&WGW&âæ÷F–g’‚uWÆöBBÆV7BöæRÆ—7FVBFö7VÖVçBÂ÷"'&–ærF†R÷&–v–æÂFòVæ¦"542f÷"–â×W'6öâ†VÇâr“¶–b‡6VÆV7FVD–çWG2ç6öÖR†–çWCÓæ–çWBæFF6WBçfÆ–FFVBÓÒwG'VRr’—&WGW&âæ÷F–g’‚uv—Bf÷"WfW'’6VÆV7FVBf–ÆRFòf–æ—6‚fÆ–FF–öââr“¶–b‚7W'&VçD66÷VçB—¶æ÷F–g’‚u6–vâ–â÷"7&VFR7W7FöÖW"66÷VçB&Vf÷&R6f–ærF†—2&WVW7Bâr“¶WF‚‚vÆöv–âr“·&WGW&çÖ6öç7BFFÖæWrf÷&ÔFF†f÷&Ò“¶6öç7B6VÆV7FVC×6VÆV7FVD–çWG2æÖ†–çWCÓæ–çWBæf–ÆW5³ÒææÖR²r(	Br¶–çWBç&VçDVÆVÖVçBçVW'•6VÆV7F÷"‚v"r’çFW‡D6öçFVçB“¶f÷&ÒçVW'•6VÆV7F÷"‚r7&Wf–WrÖFWF–Ç2r’çFW‡D6öçFVçCÖFFævWB‚væÖRr’²r+rr¶FFævWB‚vÖö&–ÆRr’²†FFævWB‚vVÖ–Âr“òr+rr¶FFævWB‚vVÖ–Âr“¢rr’²r+rr¶æÖR²‡6VÆV7FVEf&–çCòr+rÆ–6F–öâG—S¢r¶7W'&VçEf&–çDÆ&VÂ‚“¢rr’²†¦ö$FW67&—F–öãòr+rr¶¦ö$6÷’æFWF–Ç4†VF–ær²s¢r¶¦ö$FW67&—F–öâçfÇVRçG&–Ò‚“¢rr“¶6öç7B&Wf–Wtf–ÆW3Öf÷&ÒçVW'•6VÆV7F÷"‚r7&Wf–WrÖf–ÆW2r“·&Wf–Wtf–ÆW2ç&WÆ6T6†–ÆG&Vâ‚“·6VÆV7FVBæf÷$V6‚†f–ÆSÓç¶6öç7B—FVÓÖFö7VÖVçBæ7&VFTVÆVÖVçB‚vÆ’r“¶—FVÒçFW‡D6öçFVçCÖf–ÆS·&Wf–Wtf–ÆW2æVæB†—FVÒ—Ò“¶f÷&ÒçVW'•6VÆV7F÷"‚r6Æ–6çBÖf–VÆG2r’æ†–FFVã×G'VS¶f÷&ÒçVW'•6VÆV7F÷"‚r7&Wf–Wr×æVÂr’æ†–FFVãÖfÇ6S¶f÷&ÒçVW'•6VÆV7F÷$ÆÂ‚ræfÆ÷r×7FW27âr’æf÷$V6‚‚‡7FWÆ–æFW‚“Óç7FWæ6Æ74Æ—7BçFövvÆR‚v7F—fRrÆ–æFWƒÓÓÓ"’—Ó°Ð¢f÷&ÒçVW'•6VÆV7F÷"‚r6VF—BÖÆ–6F–öâr’æöæ6Æ–6³Ò‚“Óç¶f÷&ÒçVW'•6VÆV7F÷"‚r6Æ–6çBÖf–VÆG2r’æ†–FFVãÖfÇ6S¶f÷&ÒçVW'•6VÆV7F÷"‚r7&Wf–Wr×æVÂr’æ†–FFVã×G'VS¶f÷&ÒçVW'•6VÆV7F÷$ÆÂ‚ræfÆ÷r×7FW27âr’æf÷$V6‚‚‡7FWÆ–æFW‚“Óç7FWæ6Æ74Æ—7BçFövvÆR‚v7F—fRrÆ–æFWƒÃ"’—Ó°Ð¢6öç7B6ö×÷6U&WVW7CÒ‚“Óç¶6öç7BFFÖæWrf÷&ÔFF†f÷&Ò“·&WGW&âVæ¦"542Æ–6F–öâ&WVW7EÆåFó¢Væ¦"542v†G4³“s“ƒcb3“C…Æå6W'f–6S¢G¶æÖWÕÆäÆ–6F–öâG—S¢G¶7W'&VçEf&–çDÆ&VÂ‚—ÕÆäæÖS¢G¶FFævWB‚væÖRr—ÕÆäÖö&–ÆS¢G¶FFævWB‚vÖö&–ÆRr—ÕÆäVÖ–Ã¢G¶FFævWB‚vVÖ–Âr—ÇÂtæ÷B&÷f–FVBwÕÆä6öç6VçC¢7W7FöÖW"w&VVBFòF†R&—f7’æ÷F–6RæB&WVW7BG&6¶–æråÆâG¶¦ö$FW67&—F–öãöG¶¦ö$6÷’æFWF–Ç4†VF–æwÓ¥ÆâG¶¦ö$FW67&—F–öâçfÇVRçG&–Ò‚—ÕÆæ¢rwÔfVRg&öÒVæ¦"542&FRæ÷FS¢G·F&–fc÷F&–fbçF÷FÃ¢wFò&R6öæf—&ÖVBwÕÆâGµ²ââæf÷&ÒçVW'•6VÆV7F÷$ÆÂ‚ræFö7VÖVçBÖf–ÆRr•Òç6öÖR†–çWCÓæ–çWBæf–ÆW2æÆVæwF‚“òt’ÒGF6†–ær×’6VÆV7FVBÆ–6F–öâFö7VÖVçG22¥rõärõDbf–ÆW2âÆV6R&Wf–WrF†VÒæB6öæf—&ÒF†Rf–æÂfVRâs¢t’†fRæ÷BGF6†VBf–ÆW2–WC²ÆV6RFVÆÂÖRv†B÷&–v–æÇ2Fò'&–ærâwÒæò–ÖVçB†2&VVâÖFRæÓ°Ð¢6öç7B&V6÷&E&WVW7CÖ7–æ2†f–ÆW2“Óç¶6öç7BfÇVW3ÖæWrf÷&ÔFF†f÷&Ò’Ææ÷FW3Õ·6VÆV7FVEf&–çCòtÆ–6F–öâG—S¢r¶7W'&VçEf&–çDÆ&VÂ‚“¢rrÆ¦ö$FW67&—F–öãö¦ö$FW67&—F–öâçfÇVRçG&–Ò‚“¢ruÒæf–ÇFW"„&ööÆVâ’æ¦ö–â‚uÆâr“·&WGW&âv–æF÷räFVW544&6¶VæBæ7&VFTÆ–6F–öâ‡¶æÖS¥7G&–ær‡fÇVW2ævWB‚væÖRr—ÇÂrr’çG&–Ò‚’ÆÖö&–ÆS¥7G&–ær‡fÇVW2ævWB‚vÖö&–ÆRr—ÇÂrr’çG&–Ò‚’ÆVÖ–Ã¥7G&–ær‡fÇVW2ævWB‚vVÖ–Âr—ÇÂrr’çG&–Ò‚’Ç6W'f–6S§6VÆV7FVEf&–çCöæÖR²r‚r¶7W'&VçEf&–çDÆ&VÂ‚’²r’s¦æÖRÆæ÷FW2Æf–ÆW2Ç7F÷&Tf–ÆW3§fÇVW2ævWB‚w7F÷&Tf–ÆW46öç6VçBr“ÓÓÒvöâwÒ—Ó°Ð¢6öç7BfÆÆ&6³Öf÷&ÒçVW'•6VÆV7F÷"‚r6f–ÆR×6†&RÖfÆÆ&6²r“°Ð¢f÷&ÒçVW'•6VÆV7F÷"‚r76VæBÖÆ–6F–öâr’æöæ6Æ–6³Ö7–æ2†WfVçB“Óç¶6öç7B'WGFöãÖWfVçBæ7W'&VçEF&vWBÆf–ÆW3Õ²ââæf÷&ÒçVW'•6VÆV7F÷$ÆÂ‚ræFö7VÖVçBÖf–ÆRr•ÒæfÆDÖ†–çWCÓå²ââæ–çWBæf–ÆW5Ò“¶–b‚7W'&VçD66÷VçB—¶WF‚‚vÆöv–âr“·&WGW&çÖ'WGFöâæF—6&ÆVC×G'VS¶'WGFöâçFW‡D6öçFVçCÒu&W&–ær–÷W"&WVW7N(
+bs·G'—¶–b†f–ÆW2æÆVæwF‚—¶–b‚æf–vF÷"ç6†&WÇÂæf–vF÷"æ6å6†&R—F‡&÷ræWrW'&÷"‚uF†—2'&÷w6W"6ææ÷B÷Vâf–ÆR6†&R6†VWBâW6Rv†G4&VÆ÷ræBGF6‚F†R6VÆV7FVBf–ÆW2F†W&Râr“¶6öç7BFF×·F—FÆS¢uVæ¦"542+rr¶æÖRÇFW‡C¦6ö×÷6U&WVW7B‚’Æf–ÆW7ÒÇ6†&TFF×·Ó¶f÷"†6öç7B¶¶W’ÇfÇVUÒöbö&¦V7BæVçG&–W2†FF’—¶–b†æf–vF÷"æ6å6†&R‡µ¶¶W•Ó§fÇVWÒ’—6†&TFF¶¶W•Ó×fÇVWÖ–b‚6†&TFFæf–ÆW2—F‡&÷ræWrW'&÷"‚uF†—2'&÷w6W"6ææ÷B6†&RFö7VÖVçBGF6†ÖVçG2âW6Rv†G4æBGF6‚F†Rf–ÆW2g&öÒ–÷W"FWf–6Râr“¶'WGFöâçFW‡D6öçFVçCÒt6†ö÷6Rv†W&RFò6†&^(
+bs¶v—Bæf–vF÷"ç6†&R‡6†&TFF—ÖVÇ6W·v†G6†6ö×÷6U&WVW7B‚’—Ö'WGFöâçFW‡D6öçFVçCÒu6f–ær&WVW7N(
+bs¶6öç7B6fVCÖv—B&V6÷&E&WVW7B†f–ÆW2“¶æ÷F–g’‚u&WVW7Br·6fVBæ–B²r—2–â–÷W"66÷VçBâr²‡6fVBç=¸ßMí¢G§²ÚîÆ­yÞtent=refund.reason+(refund.payment_reference?' Â· Ref '+refund.payment_reference:'');const meta=document.createElement('small');meta.textContent=(customer.service||'Manual record')+' Â· '+refund.method.replaceAll('_',' ')+' Â· '+new Date(refund.created_at).toLocaleString();const status=document.createElement('select');status.setAttribute('aria-label','Manual refund status');['pending','approved','processed','declined'].forEach(value=>{const option=document.createElement('option');option.value=value;option.textContent=value.replaceAll('_',' ');status.append(option)});status.value=refund.status;status.onchange=async()=>{const previous=refund.status;status.disabled=true;try{await backend.updateOwnerRefundStatus(refund.id,status.value);refund.status=status.value;notify('Manual refund status recorded.')}catch(error){status.value=previous;notify(error.message)}finally{status.disabled=false}};row.append(title,reason,meta,status);refundsList.append(row)}
           activityList.replaceChildren();
           if(!events.length)activityList.textContent='No activity has been recorded yet.';
           for(const event of events){const row=document.createElement('article');row.className='owner-record-card';const label=document.createElement('strong');label.textContent=event.event_type.replaceAll('_',' ');const details=document.createElement('p');const bits=Object.entries(event.details||{}).map(([key,value])=>key.replaceAll('_',' ')+': '+value);if(event.application_id)bits.unshift('Application '+String(event.application_id).slice(0,8).toUpperCase());if(event.offer_id)bits.unshift('Offer '+String(event.offer_id).slice(0,8).toUpperCase());if(event.refund_id)bits.unshift('Refund '+String(event.refund_id).slice(0,8).toUpperCase());details.textContent=bits.join(' Â· ')||'Recorded activity';const time=document.createElement('small');time.textContent=new Date(event.created_at).toLocaleString();row.append(label,details,time);activityList.append(row)}
