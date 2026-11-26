@@ -251,16 +251,26 @@
 
   async function createApplication(input) {
     await ensureProfile();
+    const applicantName = String(input.name || '').trim();
+    const mobile = String(input.mobile || '').replace(/\D/g, '');
+    const service = String(input.service || '').trim();
+    const email = String(input.email || '').trim();
+    const notes = String(input.notes || '').trim();
+    if (!applicantName || applicantName.length > 100) throw new Error('Enter a name up to 100 characters.');
+    if (!/^[6-9][0-9]{9}$/.test(mobile)) throw new Error('Enter a valid 10-digit Indian mobile number.');
+    if (!service || service.length > 160) throw new Error('Choose a service up to 160 characters.');
+    if (email.length > 254) throw new Error('Email address is too long.');
+    if (notes.length > 8000) throw new Error('Request details must be 8,000 characters or fewer.');
     const created = await request('/rest/v1/customer_applications', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
       body: {
         owner_id: account.id,
-        service: input.service,
-        applicant_name: input.name,
-        mobile: input.mobile,
-        contact_email: input.useAccountEmail === false ? (input.email || '') : (input.email || account.email || ''),
-        notes: input.notes || ''
+        service,
+        applicant_name: applicantName,
+        mobile,
+        contact_email: input.useAccountEmail === false ? email : (email || account.email || ''),
+        notes
       }
     });
     const application = Array.isArray(created) ? created[0] : created;
@@ -305,7 +315,26 @@
         }
       }
     }
-    return { id: application.id.slice(0, 8).toUpperCase(), stored, storageError };
+    if (input.storeFiles && storageError) {
+      await deleteApplication(application.id).catch(() => {});
+      throw new Error('The request was not saved because a private file could not be uploaded. Please try again or visit Punjab CSC.');
+    }
+    return { id: application.id.slice(0, 8).toUpperCase(), requestId: application.id, stored, storageError };
+  }
+
+  async function notifyOwnerOfWebsiteRequest(requestId) {
+    if (!account) throw new Error('Sign in first to send the owner alert.');
+    if (!/^[0-9a-f-]{36}$/i.test(String(requestId || ''))) throw new Error('Request reference is not valid.');
+    const response = await fetch(url + '/functions/v1/notify-new-website-activity', {
+      method: 'POST',
+      headers: { apikey: key, Authorization: 'Bearer ' + await getToken(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId }),
+      cache: 'no-store'
+    });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 503 && result.reason === 'not_configured') return { sent: false, reason: 'not_configured' };
+    if (!response.ok) throw new Error(result.error || 'The website request was saved, but the generic owner alert could not be sent.');
+    return result;
   }
 
   async function listApplications() {
@@ -695,6 +724,7 @@
     initialize,
     getAccount: () => account,
     createApplication,
+    notifyOwnerOfWebsiteRequest,
     listApplications,
     deleteApplicationFiles,
     deleteApplication,
