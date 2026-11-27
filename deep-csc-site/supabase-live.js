@@ -15,11 +15,14 @@
     session = value;
     if (!session.expires_at) session.expires_at = Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600);
     const meta = session.user && session.user.user_metadata || {};
+    const phoneDigits = String(session.user && session.user.phone || '').replace(/\D/g, '');
+    const authMobile = phoneDigits.length === 12 && phoneDigits.startsWith('91') ? phoneDigits.slice(2) : phoneDigits;
     account = session.user ? {
       id: session.user.id,
       name: meta.full_name || 'Punjab CSC customer',
-      mobile: meta.mobile || '',
-      email: session.user.email || ''
+      mobile: /^[6-9][0-9]{9}$/.test(authMobile) ? authMobile : (meta.mobile || ''),
+      email: session.user.email || meta.contact_email || '',
+      phoneVerified: Boolean(session.user.phone)
     } : null;
   }
 
@@ -143,6 +146,61 @@
       throw new Error(message || 'Could not send a sign-in code. Try again shortly.');
     }
     return { status: 'otp_sent' };
+  }
+
+  function normalizeIndianPhone(value) {
+    let digits = String(value || '').replace(/\D/g, '');
+    if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+    if (!/^[6-9][0-9]{9}$/.test(digits)) throw new Error('Enter a valid 10-digit Indian WhatsApp number.');
+    return { mobile: digits, phone: '+91' + digits };
+  }
+
+  async function requestWhatsAppOtp(value, options = {}) {
+    requireConfig();
+    const { mobile, phone } = normalizeIndianPhone(value);
+    const createUser = options.createUser === true;
+    const name = String(options.name || '').trim();
+    const email = String(options.email || '').trim().toLowerCase();
+    if (createUser && name.length < 2) throw new Error('Enter your full name to create an account.');
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address, or leave it blank.');
+    const body = { phone, channel: 'whatsapp', create_user: createUser };
+    if (createUser) body.data = { full_name: name, mobile, contact_email: email };
+    const response = await fetch(url + '/auth/v1/otp', {
+      method: 'POST',
+      headers: { apikey: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data.msg || data.message || data.error_description || data.error;
+      if (data.code === 'phone_provider_disabled') throw new Error('WhatsApp sign-in is not enabled in Supabase yet. Enable Phone sign-in and configure the Twilio WhatsApp sender first.');
+      if (data.code === 'sms_provider_not_configured') throw new Error('Supabase has no phone message provider configured yet. Add the Twilio WhatsApp sender and Content SID in Auth settings.');
+      if (data.code === 'over_sms_send_rate_limit' || response.status === 429) throw new Error(message || 'Please wait before requesting another WhatsApp code.');
+      throw new Error(message || 'Could not request a WhatsApp code. Check the Twilio WhatsApp setup and try again.');
+    }
+    return { status: 'otp_sent', mobile };
+  }
+
+  async function verifyWhatsAppOtp(value, token) {
+    requireConfig();
+    const { mobile, phone } = normalizeIndianPhone(value);
+    const code = String(token || '').replace(/\D/g, '');
+    if (!/^\d{6}$/.test(code)) throw new Error('Enter the complete 6-digit WhatsApp code.');
+    const response = await fetch(url + '/auth/v1/verify', {
+      method: 'POST',
+      headers: { apikey: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, token: code, type: 'sms' }),
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.access_token) {
+      const message = data.msg || data.message || data.error_description || data.error;
+      throw new Error(message || 'That WhatsApp code could not be verified. Request a new code and try again.');
+    }
+    setSession(data);
+    await ensureProfile();
+    return { status: 'signed_in', account };
   }
 
   async function resendSignupOtp(email) {
@@ -717,6 +775,8 @@
   window.DeepCSCBackend = Object.freeze({
     auth,
     requestEmailOtp,
+    requestWhatsAppOtp,
+    verifyWhatsAppOtp,
     resendSignupOtp,
     requestPasswordRecoveryOtp,
     verifyEmailOtp,
