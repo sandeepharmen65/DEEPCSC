@@ -253,7 +253,7 @@
     const address = String(email || '').trim().toLowerCase();
     const code = String(token || '').replace(/\D/g, '');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
-    if (!/^\d{6}$/.test(code)) throw new Error('Enter the complete 6-digit email code.');
+    if (!/^\d{8}$/.test(code)) throw new Error('Enter the complete 8-digit email code.');
     if (!['email', 'signup', 'recovery'].includes(type)) throw new Error('Choose a valid email verification purpose.');
     const response = await fetch(url + '/auth/v1/verify', {
       method: 'POST',
