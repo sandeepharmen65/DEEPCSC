@@ -1,0 +1,8 @@
+[functions.notify-new-website-activity]
+# The function validates the user's JWT itself through Supabase Auth.
+verify_jwt = false
+
+[functions.whatsapp-webhook]
+# Meta webhook requests are validated using the verify token and request signature.
+verify_jwt = false
+

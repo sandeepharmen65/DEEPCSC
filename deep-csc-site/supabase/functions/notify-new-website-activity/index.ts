@@ -17,6 +17,45 @@ function validUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function configuredKey(legacyName: string, keySetName: string): string {
+  const legacy = Deno.env.get(legacyName) || "";
+  if (legacy) return legacy;
+  try {
+    const keySet = JSON.parse(Deno.env.get(keySetName) || "{}");
+    return typeof keySet.default === "string" ? keySet.default : "";
+  } catch {
+    return "";
+  }
+}
+
+async function readBodyLimited(request: Request, maxBytes: number): Promise<string | null> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(body);
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (request.method !== "POST") return response(405, { sent: false, error: "Method not allowed." });
@@ -27,8 +66,8 @@ Deno.serve(async (request) => {
   if (!tokenMatch) return response(401, { sent: false, error: "Sign in to submit a request." });
 
   const projectUrl = Deno.env.get("SUPABASE_URL") || "";
-  const publishableKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const publishableKey = configuredKey("SUPABASE_ANON_KEY", "SUPABASE_PUBLISHABLE_KEYS");
+  const serviceKey = configuredKey("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEYS");
   const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || "";
   const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";
   const alertRecipient = (Deno.env.get("WHATSAPP_ALERT_TO") || "").replace(/\D/g, "");
@@ -42,9 +81,21 @@ Deno.serve(async (request) => {
     return response(503, { sent: false, reason: "invalid_configuration", error: "Owner alert settings need correction." });
   }
 
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 4096) return response(413, { sent: false, error: "Request body is too large." });
+  if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) {
+    return response(415, { sent: false, error: "Request must use JSON." });
+  }
+
   let payload: { requestId?: unknown };
   try {
-    payload = await request.json();
+    const body = await readBodyLimited(request, 4096);
+    if (body === null) return response(413, { sent: false, error: "Request body is too large." });
+    const parsed: unknown = JSON.parse(body);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return response(400, { sent: false, error: "Request body must be a JSON object." });
+    }
+    payload = parsed as { requestId?: unknown };
   } catch {
     return response(400, { sent: false, error: "Request body is not valid JSON." });
   }
@@ -68,7 +119,8 @@ Deno.serve(async (request) => {
 
   const serviceHeaders = {
     apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
+    // Legacy service-role keys are JWTs. New sb_secret_* keys must only be sent as apikey.
+    ...(serviceKey.startsWith("eyJ") ? { Authorization: `Bearer ${serviceKey}` } : {}),
     "Content-Type": "application/json",
   };
   const recentSince = new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -152,3 +204,4 @@ Deno.serve(async (request) => {
 
   return response(200, { sent: true });
 });
+
