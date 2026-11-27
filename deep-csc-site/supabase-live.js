@@ -128,14 +128,21 @@
     return { status: 'signed_in', account };
   }
 
-  async function requestEmailOtp(email) {
+  async function requestEmailOtp(email, options = {}) {
     requireConfig();
     const address = String(email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
+    const createUser = options.createUser === true;
+    const name = String(options.name || '').trim();
+    const mobile = String(options.mobile || '').replace(/\D/g, '').slice(-10);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter a valid email address.');
+    if (createUser && name.length < 2) throw new Error('Enter your full name to create an account.');
+    if (createUser && !/^[6-9][0-9]{9}$/.test(mobile)) throw new Error('Enter a valid 10-digit mobile number.');
+    const body = { email: address, create_user: createUser };
+    if (createUser) body.data = { full_name: name, mobile };
     const response = await fetch(url + '/auth/v1/otp', {
       method: 'POST',
       headers: { apikey: key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: address, create_user: false }),
+      body: JSON.stringify(body),
       cache: 'no-store'
     });
     const data = await response.json().catch(() => ({}));
@@ -247,7 +254,7 @@
     const code = String(token || '').replace(/\D/g, '');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
     if (!/^\d{6}$/.test(code)) throw new Error('Enter the complete 6-digit email code.');
-    if (!['email', 'recovery'].includes(type)) throw new Error('Choose a valid email verification purpose.');
+    if (!['email', 'signup', 'recovery'].includes(type)) throw new Error('Choose a valid email verification purpose.');
     const response = await fetch(url + '/auth/v1/verify', {
       method: 'POST',
       headers: { apikey: key, 'Content-Type': 'application/json' },
