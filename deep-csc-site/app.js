@@ -242,9 +242,11 @@
       return message;
     }
     async function loadOffers(){const target=document.querySelector('#active-offer');if(!target)return;try{const offers=await window.DeepCSCBackend.listPublicOffers(),offer=offers?.[0];if(!offer)return;const inner=document.createElement('div');inner.className='offer-banner-inner';const copy=document.createElement('div');copy.className='offer-banner-copy';const kicker=document.createElement('span');kicker.className='offer-banner-kicker';kicker.textContent='SEASONAL PUNJAB CSC OFFER';const title=document.createElement('h2');title.textContent=offer.title;const description=document.createElement('p');description.textContent=offer.message;copy.append(kicker,title,description);inner.append(copy);if(offer.button_label){const action=document.createElement('a');action.href='#documents';action.textContent=offer.button_label;inner.append(action)}target.replaceChildren(inner);target.hidden=false}catch{target.hidden=true}};
+    let authGateActive=document.body.classList.contains('auth-locked');
     const open=(html)=>{modal.classList.remove('auth-dialog','owner-dialog','otp-dialog','checkout-dialog');body.innerHTML=html;if(!modal.open)modal.showModal()};
-    document.querySelector('.modal-close').addEventListener('click',()=>modal.close());
-    modal.addEventListener('click',(event)=>{if(event.target===modal)modal.close()});
+    document.querySelector('.modal-close').addEventListener('click',()=>{if(!authGateActive)modal.close()});
+    modal.addEventListener('cancel',(event)=>{if(authGateActive)event.preventDefault()});
+    modal.addEventListener('click',(event)=>{if(event.target===modal&&!authGateActive)modal.close()});
     const mobileMenu=document.querySelector('#mobile-menu'),mainNav=document.querySelector('#main-nav');
     mobileMenu.onclick=()=>{const expanded=mobileMenu.getAttribute('aria-expanded')==='true';mobileMenu.setAttribute('aria-expanded',String(!expanded));mainNav.classList.toggle('is-open',!expanded)};
     mainNav.querySelectorAll('a').forEach((link)=>link.onclick=()=>{mainNav.classList.remove('is-open');mobileMenu.setAttribute('aria-expanded','false')});
@@ -364,7 +366,19 @@
     document.querySelector('#owner-open').onclick=()=>auth('login',true);
     function setSignedIn(account){currentAccount=account;const button=document.querySelector('#account-open');if(button)button.textContent='My account'}
     function clearSignedIn(){currentAccount=null;const button=document.querySelector('#account-open');if(button)button.textContent=pageCopy[currentLanguage].login}
-    async function refreshAuthState(){try{await window.DeepCSCBackend.initialize();const account=window.DeepCSCBackend.getAccount();if(account)setSignedIn(account)}catch{}}
+    function lockWebsite(){authGateActive=true;document.body.classList.add('auth-locked')}
+    function unlockWebsite(){authGateActive=false;document.body.classList.remove('auth-locked')}
+    async function refreshAuthState(){
+      lockWebsite();
+      auth('login',false,true);
+      let account=null;
+      try{await window.DeepCSCBackend.initialize();account=window.DeepCSCBackend.getAccount()}catch{}
+      if(!account)return;
+      setSignedIn(account);
+      if(isOwnerEmail(account.email)){await showOwnerAccount(account);return}
+      unlockWebsite();
+      if(modal.open)modal.close();
+    }
     function authWhatsApp(mode){
       const registering=mode==='register';
       open('<div class="auth-shell '+(registering?'is-signup':'')+'"><form class="modal-form auth-form" id="whatsapp-auth-form"><div class="auth-brand"><span class="auth-mark">P</span><span>PUNJAB CSC<small>CHHAJLI · SUNAM</small></span></div><div class="auth-heading"><span>YOUR CUSTOMER ACCOUNT</span><h2>'+(registering?'Create your account':'Sign in to continue')+'</h2><p>'+(registering?'Register with your WhatsApp number. We will send a one-time verification code.':'Enter the WhatsApp number linked to your Punjab CSC account.')+'</p></div><div class="auth-tabs"><button type="button" data-phone-mode="login" class="'+(registering?'':'active')+'">Sign in</button><button type="button" data-phone-mode="register" class="'+(registering?'active':'')+'">Sign up</button></div>'+(registering?'<label>Full name<input name="name" required minlength="2" autocomplete="name" placeholder="Enter your name"></label>':'')+'<label>WhatsApp mobile number (+91)<input name="mobile" type="tel" required inputmode="numeric" autocomplete="tel-national" pattern="[6-9][0-9]{9}" maxlength="10" placeholder="10-digit mobile number"></label>'+(registering?'<label>Email address <span class="password-note">(optional)</span><input name="email" type="email" autocomplete="email" placeholder="name@example.com"></label><label class="form-consent"><input name="consent" type="checkbox" required><span>I agree to the <a href="legal.html#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="legal.html#terms" target="_blank" rel="noopener">Terms &amp; Conditions</a>.</span></label><small class="password-note">No password or email confirmation link is needed. Your six-digit code will be sent to this WhatsApp number.</small>':'<small class="password-note">A six-digit sign-in code will be sent through WhatsApp. If this is an older email-based account, use the existing-account sign-in option below.</small>')+'<button class="auth-submit" type="submit">Send WhatsApp code <span>→</span></button><button class="otp-link" type="button" id="legacy-email-login">Existing account: email and password <span>→</span></button><small class="auth-preview-note" aria-live="polite">OTP delivery requires the Punjab CSC WhatsApp sender to be connected in Supabase.</small></form><aside class="auth-welcome"><div class="welcome-orb orb-one"></div><div class="welcome-orb orb-two"></div><span class="welcome-kicker">PUNJAB CSC · CHHAJLI</span><h2>'+(registering?'Welcome to Punjab CSC':'Welcome back')+'</h2><p>'+(registering?'Verify your WhatsApp number once to create your customer account.':'Use your verified WhatsApp number to access your account and applications.')+'</p><div class="welcome-points"><span>✦ &nbsp; Six-digit WhatsApp OTP</span><span>✦ &nbsp; Passwordless customer sign-in</span><span>✦ &nbsp; Your requests stay private</span></div><button class="auth-switch" type="button" data-phone-mode="'+(registering?'login':'register')+'">'+(registering?'Already have an account? Sign in':'New here? Create an account')+' <span>↗</span></button></aside></div>');
@@ -384,7 +398,7 @@
       body.querySelector('[name="mobile"]')?.focus();
     }
     function auth(mode,ownerOnly=false,legacyEmail=false){
-      if(!ownerOnly&&!legacyEmail){authWhatsApp(mode);return}
+      if(!ownerOnly&&!legacyEmail)legacyEmail=true;
       const registering=mode==='register';
       open('<div class="auth-shell '+(registering?'is-signup ':'')+(ownerOnly?'owner-signin-only':'')+'"><form class="modal-form auth-form" id="auth-form"><div class="auth-brand"><span class="auth-mark">P</span><span>PUNJAB CSC<small>CHHAJLI · SUNAM</small></span></div><div class="auth-heading"><span>'+(ownerOnly?'PRIVATE OWNER AREA':'YOUR CUSTOMER ACCOUNT')+'</span><h2>'+(ownerOnly?'Owner dashboard sign in':registering?'Create your account':'Sign in to continue')+'</h2><p>'+(ownerOnly?'Use the private owner account, then verify with Google Authenticator.':registering?'Create a protected Punjab CSC account.':'Sign in to your Punjab CSC account.')+'</p></div>'+(ownerOnly?'':'<div class="auth-tabs"><button type="button" data-mode="login" class="'+(registering?'':'active')+'">Sign in</button><button type="button" data-mode="register" class="'+(registering?'active':'')+'">Sign up</button></div>')+(registering?'<label>Full name<input name="name" required autocomplete="name" placeholder="Enter your name"></label><label>WhatsApp mobile number<input name="mobile" required inputmode="numeric" autocomplete="tel" pattern="[6-9][0-9]{9}" maxlength="10" placeholder="10-digit mobile number"></label>':'')+'<label>Email address<input name="email" type="email" required autocomplete="email" placeholder="name@example.com"></label>'+(registering?'':ownerOnly?'<small class="password-note owner-login-hint" id="owner-login-hint">The public contact email is separate from the private owner login email. After the password step, enter the Google Authenticator code.</small>':'<small class="password-note owner-login-hint" id="owner-login-hint" hidden>Owner dashboard access requires the private owner login and Google Authenticator.</small>')+'<label>Password<input name="password" type="password" '+(registering?'required minlength="12" pattern="(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9]).{12,}"':'required')+' autocomplete="'+(registering?'new-password':'current-password')+'" placeholder="'+(registering?'12+ characters, upper & lower case, number':'Enter your password')+'"></label>'+(registering?'<label>Confirm password<input name="confirm" type="password" required autocomplete="new-password" placeholder="Type your password again"></label><small class="password-note">Choose 12+ characters with uppercase, lowercase and a number. Enter the 6-digit email code to finish signup; no confirmation link is used.</small><label class="form-consent"><input name="consent" type="checkbox" required><span>I agree to the <a href="legal.html#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="legal.html#terms" target="_blank" rel="noopener">Terms &amp; Conditions</a>.</span></label>':(ownerOnly?'':'<small class="password-note">Use your password or request a one-time sign-in code by email.</small><button type="button" class="otp-link" id="email-otp-start">Sign in with email code <span>→</span></button>'))+'<button class="auth-submit" type="submit">'+(registering?'Create account':'Sign in')+' <span>→</span></button><small class="auth-preview-note" aria-live="polite">Your session stays in memory on this device and is never saved in browser storage.</small></form><aside class="auth-welcome"><div class="welcome-orb orb-one"></div><div class="welcome-orb orb-two"></div><span class="welcome-kicker">PUNJAB CSC · CHHAJLI</span><h2>'+(ownerOnly?'Owner access':registering?'Welcome to Punjab CSC':'Welcome back')+'</h2><p>'+(ownerOnly?'This private sign-in is separate from customer registration.':registering?'Verify the 6-digit code sent to your email to activate your private customer account.':'Use your verified email to access your private customer profile.')+'</p><div class="welcome-points"><span>✦ &nbsp; Clear document steps</span><span>✦ &nbsp; Private account access</span><span>✦ &nbsp; Open 24 hours</span></div><button class="auth-switch" type="button" data-mode="'+(registering?'login':'register')+'">'+(registering?'Sign in to your account':'New here? Create an account')+' <span>↗</span></button></aside></div>');
       modal.classList.add('auth-dialog');
@@ -394,7 +408,7 @@
       if(emailCodeButton)emailCodeButton.onclick=()=>otp(body.querySelector('[name="email"]').value);
       if(legacyEmail){
         const switchToWhatsApp=document.createElement('button');
-        switchToWhatsApp.type='button';switchToWhatsApp.className='otp-link';switchToWhatsApp.textContent='Use WhatsApp OTP instead';switchToWhatsApp.onclick=()=>auth('login');
+        switchToWhatsApp.type='button';switchToWhatsApp.className='otp-link';switchToWhatsApp.textContent='Use WhatsApp OTP instead';switchToWhatsApp.onclick=()=>authWhatsApp('login');
         body.querySelector('.auth-preview-note')?.insertAdjacentElement('beforebegin',switchToWhatsApp);
       }
       if(!ownerOnly){
@@ -432,6 +446,7 @@
           if(ownerOnly&&!isOwnerEmail(signedInAccount?.email)){await window.DeepCSCBackend.signOut();throw new Error('This account is not enabled for Punjab CSC owner access. Use customer sign-in instead.')}
           setSignedIn(signedInAccount);
           if(!registering&&isOwnerEmail(signedInAccount?.email)){await showOwnerAccount(signedInAccount);return}
+          unlockWebsite();
           note.textContent=registering?'Your account is ready.':'You are securely signed in.';
           notify(registering?'Punjab CSC account created.':'Signed in securely.');setTimeout(()=>{if(modal.open)modal.close()},700);
         }catch(error){note.textContent=error.message}
@@ -474,7 +489,7 @@
       </div>`);
       modal.classList.add('auth-dialog','owner-dialog');
       const content=body.querySelector('#owner-content');
-      body.querySelector('#owner-logout').onclick=async()=>{await backend.signOut();clearSignedIn();modal.close();notify('Signed out.')};
+      body.querySelector('#owner-logout').onclick=async()=>{await backend.signOut();clearSignedIn();lockWebsite();auth('login',false,true);notify('Signed out.')};
       const ownerSearch=body.querySelector('#owner-search');
       body.querySelectorAll('[data-owner-target]').forEach(button=>button.onclick=()=>{
         body.querySelectorAll('[data-owner-target]').forEach(item=>item.classList.toggle('active',item===button));
@@ -737,7 +752,7 @@
           card.append(remove);list.append(card);
         }
       }catch(error){list.textContent=error.message}
-      body.querySelector('#account-logout').onclick=async()=>{await window.DeepCSCBackend.signOut();clearSignedIn();modal.close();notify('Signed out.')};
+      body.querySelector('#account-logout').onclick=async()=>{await window.DeepCSCBackend.signOut();clearSignedIn();lockWebsite();auth('login',false,true);notify('Signed out.')};
     }
     refreshAuthState();
     loadOffers();
@@ -753,7 +768,7 @@
       function startResendCooldown(duration=60000){otpCooldownUntil=Date.now()+duration;const update=()=>{const seconds=Math.ceil((otpCooldownUntil-Date.now())/1000);if(seconds>0){resend.disabled=true;resend.textContent=`Send a new WhatsApp code in ${seconds}s`}else{resend.disabled=false;resend.textContent='Send a new WhatsApp code';clearInterval(otpCooldownTimer)}};update();if(otpCooldownTimer)clearInterval(otpCooldownTimer);otpCooldownTimer=setInterval(update,1000)}
       body.querySelector('#whatsapp-otp-back').onclick=()=>auth(signupVerification?'register':'login');
       resend.onclick=async()=>{const wait=Math.ceil((otpCooldownUntil-Date.now())/1000);if(wait>0){status.textContent=`Please wait ${wait} seconds before requesting another code.`;return}resend.disabled=true;status.textContent='Requesting another WhatsApp code…';try{await window.DeepCSCBackend.requestWhatsAppOtp(mobile,{createUser:signupVerification,...profile});status.textContent='A new WhatsApp code was requested.';startResendCooldown()}catch(error){status.textContent=error.message;resend.disabled=false}};
-      body.querySelector('#whatsapp-otp-form').onsubmit=async event=>{event.preventDefault();const code=fields.map(field=>field.value).join('');if(code.length!==6){status.textContent='Enter all six digits.';return}const submit=body.querySelector('.otp-verify');submit.disabled=true;status.textContent='Verifying your WhatsApp code…';try{await window.DeepCSCBackend.verifyWhatsAppOtp(mobile,code);const signedInAccount=window.DeepCSCBackend.getAccount();setSignedIn(signedInAccount);notify(signupVerification?'WhatsApp verified. Your customer account is ready.':'Signed in securely with WhatsApp.');setTimeout(()=>{if(modal.open)modal.close()},700)}catch(error){status.textContent=error.message}finally{submit.disabled=false}};
+      body.querySelector('#whatsapp-otp-form').onsubmit=async event=>{event.preventDefault();const code=fields.map(field=>field.value).join('');if(code.length!==6){status.textContent='Enter all six digits.';return}const submit=body.querySelector('.otp-verify');submit.disabled=true;status.textContent='Verifying your WhatsApp code…';try{await window.DeepCSCBackend.verifyWhatsAppOtp(mobile,code);const signedInAccount=window.DeepCSCBackend.getAccount();setSignedIn(signedInAccount);unlockWebsite();notify(signupVerification?'WhatsApp verified. Your customer account is ready.':'Signed in securely with WhatsApp.');setTimeout(()=>{if(modal.open)modal.close()},700)}catch(error){status.textContent=error.message}finally{submit.disabled=false}};
       startResendCooldown();fields[0]?.focus();
     }
     async function otp(email,purpose='login'){
@@ -796,7 +811,7 @@
         }catch(error){status.textContent=error.message;const match=String(error.message).match(/after\s+(\d+)\s+seconds/i);if(match)startResendCooldown(Math.max(1,Number(match[1]))*1000);else resend.disabled=false}
       };
       resend.onclick=sendCode;
-      body.querySelector('#otp-form').onsubmit=async(event)=>{event.preventDefault();const code=fields.map((field)=>field.value).join('');if(code.length!==6){status.textContent='Enter all 6 digits.';return}const submit=body.querySelector('.otp-verify');submit.disabled=true;status.textContent='Verifying your code…';try{await window.DeepCSCBackend.verifyEmailOtp(address,code,purpose==='recovery'?'recovery':'email');if(purpose==='recovery'){await setNewPassword(address);return}const signedInAccount=window.DeepCSCBackend.getAccount();setSignedIn(signedInAccount);if(isOwnerEmail(signedInAccount?.email)){await showOwnerAccount(signedInAccount);return}notify(signupVerification?'Email verified. Your account is ready.':'Signed in securely with your email code.');setTimeout(()=>{if(modal.open)modal.close()},700)}catch(error){status.textContent=error.message}finally{submit.disabled=false}};
+      body.querySelector('#otp-form').onsubmit=async(event)=>{event.preventDefault();const code=fields.map((field)=>field.value).join('');if(code.length!==6){status.textContent='Enter all 6 digits.';return}const submit=body.querySelector('.otp-verify');submit.disabled=true;status.textContent='Verifying your code…';try{await window.DeepCSCBackend.verifyEmailOtp(address,code,purpose==='recovery'?'recovery':signupVerification?'signup':'email');if(purpose==='recovery'){await setNewPassword(address);return}const signedInAccount=window.DeepCSCBackend.getAccount();setSignedIn(signedInAccount);if(isOwnerEmail(signedInAccount?.email)){await showOwnerAccount(signedInAccount);return}unlockWebsite();notify(signupVerification?'Email verified. Your account is ready.':'Signed in securely with your email code.');setTimeout(()=>{if(modal.open)modal.close()},700)}catch(error){status.textContent=error.message}finally{submit.disabled=false}};
       fields[0]?.focus();
       if(signupVerification||purpose==='recovery')startResendCooldown();
       else await sendCode();
@@ -813,7 +828,7 @@
         if(password!==confirm){status.textContent='Passwords do not match. Please check both fields.';return}
         if(password.length<12||!/[A-Z]/.test(password)||!/[a-z]/.test(password)||!/[0-9]/.test(password)){status.textContent='Use at least 12 characters with uppercase, lowercase and a number.';return}
         submit.disabled=true;status.textContent='Updating your password securely…';
-        try{await window.DeepCSCBackend.updatePassword(password);await window.DeepCSCBackend.signOut();clearSignedIn();notify('Password updated. Sign in with your new password.');auth('login',false,true)}
+        try{await window.DeepCSCBackend.updatePassword(password);await window.DeepCSCBackend.signOut();clearSignedIn();lockWebsite();notify('Password updated. Sign in with your new password.');auth('login',false,true)}
         catch(error){status.textContent=error.message}
         finally{submit.disabled=false}
       };

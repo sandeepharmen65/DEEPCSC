@@ -287,3 +287,6 @@ body{background:radial-gradient(ellipse at 50% -14%,#dff2ed 0,transparent 42%),v
 @media(max-width:760px){.owner-settings-add-service{align-items:stretch;flex-direction:column}.owner-settings-add-service button{width:100%}}
 @media(max-width:420px){.owner-portal-links{grid-template-columns:1fr}.owner-dashboard-content .owner-stat-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .otp-password-label{width:100%;display:grid;gap:6px;color:#b9c9d8;font-size:10px;font-weight:700}.otp-password-label input{width:100%;height:44px;border:1px solid #a9cbe34c!important;border-radius:9px!important;background:#ffffff0b!important;color:#f6fbff!important;padding:0 12px!important;font-size:12px!important}.otp-password-label input:focus{border-color:#74ebd8!important;outline:0;box-shadow:0 0 0 3px #37d9c41c,0 0 23px #38dbc636!important}
+
+
+body.auth-locked{overflow:hidden}body.auth-locked>header.topbar,body.auth-locked>.offer-banner,body.auth-locked>main,body.auth-locked>.footer,body.auth-locked>.cookie-banner,body.auth-locked>.contact-dock{display:none!important}body.auth-locked #modal .modal-close{display:none}
