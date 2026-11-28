@@ -369,12 +369,11 @@
     function lockWebsite(){authGateActive=true;document.body.classList.add('auth-locked')}
     function unlockWebsite(){authGateActive=false;document.body.classList.remove('auth-locked')}
     async function refreshAuthState(){
-      lockWebsite();
       let authState=null;
-      try{authState=await window.DeepCSCBackend.initialize()}catch{}
-      const account=window.DeepCSCBackend.getAccount();
+      try{authState=await window.DeepCSCBackend?.initialize?.()}catch{}
+      const account=window.DeepCSCBackend?.getAccount?.()||null;
       if(authState?.passwordRecovery&&account){setSignedIn(account);setNewPassword(account.email);return}
-      if(!account){auth('login');return}
+      if(!account){unlockWebsite();return}
       setSignedIn(account);
       if(isOwnerEmail(account.email)){await showOwnerAccount(account);return}
       unlockWebsite();
