@@ -1,0 +1,4 @@
+project_id = "ntipueilqrcmpekpazhf"
+
+[functions.notify-new-website-customer]
+verify_jwt = true

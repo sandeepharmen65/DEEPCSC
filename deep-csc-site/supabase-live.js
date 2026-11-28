@@ -96,6 +96,36 @@
     });
   }
 
+  async function updateCustomerProfile(input) {
+    if (!account || !session) throw new Error('Sign in first to edit your profile.');
+    if (isOwnerEmail(account.email)) throw new Error('Owner account details are managed separately from customer profiles.');
+    const fullName = String(input.fullName || '').trim();
+    const mobile = String(input.mobile || '').replace(/\D/g, '');
+    const email = String(input.email || '').trim().toLowerCase();
+    if (fullName.length < 2 || fullName.length > 120) throw new Error('Enter a name between 2 and 120 characters.');
+    if (!/^[6-9][0-9]{9}$/.test(mobile)) throw new Error('Enter a valid 10-digit Indian mobile number.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error('Enter a valid email address.');
+
+    const emailChanged = email !== String(account.email || '').toLowerCase();
+    const updatedUser = await request('/auth/v1/user', {
+      method: 'PUT',
+      body: {
+        ...(emailChanged ? { email } : {}),
+        data: { full_name: fullName, mobile }
+      }
+    });
+    await request('/rest/v1/customer_profiles?user_id=eq.' + encodeURIComponent(account.id), {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: { full_name: fullName, mobile, updated_at: new Date().toISOString() }
+    });
+    setSession({ ...session, user: updatedUser || session.user });
+    return {
+      emailChangeRequested: emailChanged,
+      emailChangePending: emailChanged && String((updatedUser || {}).email || '').toLowerCase() !== email
+    };
+  }
+
   async function auth(mode, payload) {
     requireConfig();
     const isSignup = mode === 'register';
@@ -125,6 +155,7 @@
     if (!data.access_token) throw new Error('Sign-up did not return a session. Check that Supabase Confirm email is disabled for password-only customer accounts.');
     setSession(data);
     await ensureProfile();
+    if (isSignup) notifyOwnerOfNewCustomer().catch(() => {});
     return { status: 'signed_in', account };
   }
 
@@ -188,7 +219,10 @@
       user
     });
     history.replaceState(null, '', window.location.pathname + window.location.search);
-    if (!passwordRecovery) await ensureProfile();
+    if (!passwordRecovery) {
+      await ensureProfile();
+      notifyOwnerOfNewCustomer().catch(() => {});
+    }
     return { passwordRecovery };
   }
 
@@ -280,9 +314,44 @@
     return result;
   }
 
+  async function notifyOwnerOfNewCustomer() {
+    if (!account || isOwnerEmail(account.email)) return { sent: false, reason: 'not_customer' };
+    const response = await fetch(url + '/functions/v1/notify-new-website-customer', {
+      method: 'POST',
+      headers: { apikey: key, Authorization: 'Bearer ' + await getToken(), 'Content-Type': 'application/json' },
+      body: '{}',
+      cache: 'no-store'
+    });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 503 && result.reason === 'not_configured') return { sent: false, reason: 'not_configured' };
+    if (!response.ok) throw new Error(result.error || 'The new customer was saved on the website, but the owner alert could not be confirmed.');
+    return result;
+  }
+
   async function listApplications() {
     if (!account) throw new Error('Sign in first to view your requests.');
-    return request('/rest/v1/customer_applications?select=id,service,status,created_at,customer_documents(id,original_name,object_path)&owner_id=eq.' + encodeURIComponent(account.id) + '&order=created_at.desc');
+    return request('/rest/v1/customer_applications?select=id,service,applicant_name,mobile,contact_email,notes,status,created_at,updated_at,customer_documents(id,original_name,object_path,media_type,file_size_bytes,created_at)&owner_id=eq.' + encodeURIComponent(account.id) + '&order=created_at.desc');
+  }
+
+  async function downloadCustomerDocument(objectPath) {
+    if (!account || !session) throw new Error('Sign in to open your documents.');
+    const path = String(objectPath || '');
+    const segments = path.split('/');
+    if (segments.length !== 3 || segments[0] !== account.id || segments.some((part) => !part || part === '.' || part === '..')) {
+      throw new Error('This document does not belong to your account.');
+    }
+    const encodedPath = segments.map(encodeURIComponent).join('/');
+    let response;
+    try {
+      response = await fetch(url + '/storage/v1/object/authenticated/' + bucket + '/' + encodedPath, {
+        headers: { apikey: key, Authorization: 'Bearer ' + await getToken() },
+        cache: 'no-store'
+      });
+    } catch {
+      throw new Error('Punjab CSC secure document storage could not be reached.');
+    }
+    if (!response.ok) throw new Error('Secure document request failed (' + response.status + ').');
+    return response.blob();
   }
 
   async function deleteApplicationFiles(applicationId, paths) {
@@ -659,13 +728,16 @@
 
   window.DeepCSCBackend = Object.freeze({
     auth,
+    updateCustomerProfile,
     requestPasswordRecovery,
     updatePassword,
     initialize,
     getAccount: () => account,
     createApplication,
     notifyOwnerOfWebsiteRequest,
+    notifyOwnerOfNewCustomer,
     listApplications,
+    downloadCustomerDocument,
     deleteApplicationFiles,
     deleteApplication,
     listFactors,

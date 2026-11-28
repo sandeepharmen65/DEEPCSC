@@ -693,25 +693,47 @@
       const account=currentAccount;
       if(!account){auth('login');return}
       if(isOwnerEmail(account.email)){await showOwnerAccount(account);return}
-      open('<div class="auth-shell"><section class="auth-form"><div class="auth-brand"><span class="auth-mark">P</span><span>PUNJAB CSC<small>SECURE CUSTOMER ACCOUNT</small></span></div><div class="auth-heading"><span>ACCOUNT DASHBOARD</span><h2 id="account-name">Your account</h2><p id="account-mobile"></p></div><p class="password-note" id="account-security-note"></p><h3>My applications</h3><div id="account-applications" class="password-note" aria-live="polite">Loading your applications…</div><button class="auth-switch" type="button" id="account-logout">Sign out</button></section><aside class="auth-welcome"><span class="welcome-kicker">YOUR PUNJAB CSC</span><h2>Private account access.</h2><p>Application records and document copies are restricted to your signed-in account.</p><div class="welcome-points"><span>✦ &nbsp; Private account session</span><span>✦ &nbsp; Your requests only</span><span>✦ &nbsp; Delete requests from this account</span></div></aside></div>');
+      open('<div class="auth-shell customer-account-dashboard"><section class="auth-form customer-account-main"><div class="auth-brand"><span class="auth-mark">P</span><span>PUNJAB CSC<small>SECURE CUSTOMER ACCOUNT</small></span></div><div class="auth-heading"><span>YOUR PRIVATE DASHBOARD</span><h2 id="account-name">Your account</h2><p id="account-mobile"></p></div><p class="password-note" id="account-security-note">Your profile, requests and consented document copies stay in your Punjab CSC account. WhatsApp receives no document files or application details.</p><form id="customer-profile-form" class="customer-profile-form"><h3>Edit profile</h3><div class="customer-profile-grid"><label>Full name<input name="fullName" autocomplete="name" minlength="2" maxlength="120" required></label><label>Mobile number<input name="mobile" type="tel" inputmode="numeric" autocomplete="tel" pattern="[6-9][0-9]{9}" maxlength="10" required></label><label>Email address<input name="email" type="email" autocomplete="email" maxlength="254" required></label></div><small class="password-note">If you change your email, Supabase may ask you to confirm it. Your current email stays active until confirmation is complete.</small><p id="customer-profile-result" class="password-note" role="status" aria-live="polite"></p><button class="auth-submit" type="submit" id="customer-profile-save">Save profile <span>→</span></button></form><section class="customer-application-history"><h3>My applications &amp; enquiries</h3><p class="password-note">View each request, its current status, details and private files. Full information is kept on this website.</p><div id="account-applications" aria-live="polite">Loading your applications…</div></section><button class="auth-switch" type="button" id="account-logout">Sign out</button></section><aside class="auth-welcome customer-account-aside"><span class="welcome-kicker">YOUR PUNJAB CSC</span><h2>Everything in one account.</h2><p>Use this dashboard to update your contact details and follow your service requests.</p><div class="welcome-points"><span>✦ &nbsp; Your profile can be edited</span><span>✦ &nbsp; Only your applications are shown</span><span>✦ &nbsp; Private files open after sign-in</span><span>✦ &nbsp; WhatsApp only gets a generic owner alert</span></div><div class="customer-account-privacy"><strong>Your documents stay private</strong><p>Punjab CSC does not send application details or uploaded files to WhatsApp. You can download your own files here or delete a request and its copies.</p></div></aside></div>');
       modal.classList.add('auth-dialog');
       body.querySelector('#account-name').textContent=account.name;
       body.querySelector('#account-mobile').textContent=(account.email||'')+(account.mobile?' · WhatsApp '+account.mobile:'');
-      body.querySelector('#account-security-note').textContent=(account.phoneVerified?'A verified WhatsApp number protects this account.':'This older customer account still uses email and password.')+' Files are stored only if you choose the separate private-copy consent.';
+      const profileForm=body.querySelector('#customer-profile-form');
+      profileForm.elements.fullName.value=account.name||'';
+      profileForm.elements.mobile.value=account.mobile||'';
+      profileForm.elements.email.value=account.email||'';
+      profileForm.onsubmit=async(event)=>{
+        event.preventDefault();
+        const save=profileForm.querySelector('#customer-profile-save'),result=body.querySelector('#customer-profile-result');
+        save.disabled=true;result.textContent='Saving your profile securely…';
+        try{
+          const updated=await window.DeepCSCBackend.updateCustomerProfile({fullName:profileForm.elements.fullName.value,mobile:profileForm.elements.mobile.value,email:profileForm.elements.email.value});
+          currentAccount=window.DeepCSCBackend.getAccount();
+          body.querySelector('#account-name').textContent=currentAccount.name;
+          body.querySelector('#account-mobile').textContent=(currentAccount.email||'')+(currentAccount.mobile?' · WhatsApp '+currentAccount.mobile:'');
+          profileForm.elements.fullName.value=currentAccount.name||'';profileForm.elements.mobile.value=currentAccount.mobile||'';profileForm.elements.email.value=currentAccount.email||'';
+          result.textContent=updated.emailChangePending?'Profile saved. Confirm the email change using the confirmation message Supabase sent; your current email remains active until then.':updated.emailChangeRequested?'Profile saved. Your email address was updated.':'Profile saved successfully.';
+        }catch(error){result.textContent=error.message}
+        finally{save.disabled=false}
+      };
       const list=body.querySelector('#account-applications');
       try{
         const applications=await window.DeepCSCBackend.listApplications();list.replaceChildren();
         if(!applications.length)list.textContent='No applications are linked to this account yet.';
         for(const application of applications){
-          const card=document.createElement('article'),title=document.createElement('strong'),status=document.createElement('p');
-          card.style.cssText='padding:12px;margin:9px 0;border:1px solid #dce8e4;border-radius:9px;background:#fff';
+          const card=document.createElement('article'),title=document.createElement('strong'),status=document.createElement('p'),details=document.createElement('dl');
+          card.className='customer-application-card';
           title.textContent=application.service;
-          status.textContent=application.status+' · '+new Date(application.created_at).toLocaleDateString();
-          card.append(title,status);
+          const createdDate=new Date(application.created_at);
+          status.className='customer-application-status status-'+String(application.status||'new').replace(/[^a-z_]/g,'');
+          status.textContent=(application.status||'new').replaceAll('_',' ')+' · Submitted '+(Number.isNaN(createdDate.valueOf())?'date unavailable':createdDate.toLocaleString());
+          const detailRows=[['Applicant',application.applicant_name],['Mobile',application.mobile],['Email',application.contact_email],['Request ID',String(application.id||'').slice(0,8).toUpperCase()]];
+          for(const [label,value] of detailRows){if(!value)continue;const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;details.append(dt,dd)}
+          card.append(title,status,details);
+          if(application.notes){const note=document.createElement('p');note.className='customer-application-notes';note.textContent=application.notes;card.append(note)}
           const docs=application.customer_documents||[];
-          if(docs.length){const fileList=document.createElement('small');fileList.textContent=docs.length+' private document copy/copies stored';card.append(fileList)}
-          const remove=document.createElement('button');remove.type='button';remove.className='auth-switch';remove.textContent='Delete request and private files';
-          remove.onclick=async()=>{if(!confirm('Delete this request and any private document copies from your Punjab CSC account? '))return;remove.disabled=true;try{await window.DeepCSCBackend.deleteApplication(application.id);await showAccount()}catch(error){remove.disabled=false;notify(error.message)}};
+          if(docs.length){const fileTitle=document.createElement('b'),fileList=document.createElement('div');fileTitle.className='customer-files-heading';fileTitle.textContent='Your uploaded documents';fileList.className='customer-file-list';for(const documentRecord of docs){const row=document.createElement('div'),name=document.createElement('span'),download=document.createElement('button');row.className='customer-file-row';name.textContent=documentRecord.original_name;download.type='button';download.className='customer-file-download';download.textContent='Open / download';download.onclick=async()=>{download.disabled=true;download.textContent='Opening…';try{const file=await window.DeepCSCBackend.downloadCustomerDocument(documentRecord.object_path),objectUrl=URL.createObjectURL(file),anchor=document.createElement('a');anchor.href=objectUrl;anchor.download=documentRecord.original_name||'Punjab-CSC-document';document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(objectUrl),60000)}catch(error){notify(error.message)}finally{download.disabled=false;download.textContent='Open / download'}};row.append(name,download);fileList.append(row)}card.append(fileTitle,fileList)}
+          const remove=document.createElement('button');remove.type='button';remove.className='auth-switch customer-delete-request';remove.textContent='Delete request and private files';
+          remove.onclick=async()=>{if(!confirm('Delete this website request and its private document copies from your account? This cannot be undone.'))return;remove.disabled=true;try{await window.DeepCSCBackend.deleteApplication(application.id);await showAccount()}catch(error){remove.disabled=false;notify(error.message)}};
           card.append(remove);list.append(card);
         }
       }catch(error){list.textContent=error.message}
