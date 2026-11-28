@@ -104,7 +104,7 @@
       if (!/^[6-9][0-9]{9}$/.test(payload.mobile)) throw new Error('Enter a valid 10-digit WhatsApp mobile number.');
     }
     const endpoint = isSignup
-      ? '/auth/v1/signup?redirect_to=' + encodeURIComponent('https://deepcsc.dpdns.org/')
+      ? '/auth/v1/signup'
       : '/auth/v1/token?grant_type=password';
     const body = isSignup
       ? { email: payload.email, password: payload.password, data: { full_name: payload.name, mobile: payload.mobile } }
@@ -118,122 +118,22 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const message = data.msg || data.message || data.error_description || data.error;
-      if (String(message).toLowerCase().includes('email not confirmed')) throw new Error('Verify your email with the 6-digit signup code. Return to Sign up to request another code, then sign in.');
-      if (data.code === 'invalid_credentials' || String(message).toLowerCase().includes('invalid login credentials')) throw new Error('The email or password does not match. Use “Sign in with email code” if you can access the account inbox.');
+      if (String(message).toLowerCase().includes('email not confirmed')) throw new Error('This email still needs confirmation in Supabase Auth. Disable Confirm email to allow email-and-password sign-up without a customer code.');
+      if (data.code === 'invalid_credentials' || String(message).toLowerCase().includes('invalid login credentials')) throw new Error('The email or password does not match. Check both and try again.');
       throw new Error(message || (isSignup ? 'Could not create the account. Check the details and try again.' : 'Sign-in failed. Check your verified email and password.'));
     }
-    if (!data.access_token) return { status: 'confirm_email' };
+    if (!data.access_token) throw new Error('Sign-up did not return a session. Check that Supabase Confirm email is disabled for password-only customer accounts.');
     setSession(data);
     await ensureProfile();
     return { status: 'signed_in', account };
   }
 
-  async function requestEmailOtp(email, options = {}) {
-    requireConfig();
-    const address = String(email || '').trim().toLowerCase();
-    const createUser = options.createUser === true;
-    const name = String(options.name || '').trim();
-    const mobile = String(options.mobile || '').replace(/\D/g, '').slice(-10);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter a valid email address.');
-    if (createUser && name.length < 2) throw new Error('Enter your full name to create an account.');
-    if (createUser && !/^[6-9][0-9]{9}$/.test(mobile)) throw new Error('Enter a valid 10-digit mobile number.');
-    const body = { email: address, create_user: createUser };
-    if (createUser) body.data = { full_name: name, mobile };
-    const response = await fetch(url + '/auth/v1/otp', {
-      method: 'POST',
-      headers: { apikey: key, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      cache: 'no-store'
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = data.msg || data.message || data.error_description || data.error;
-      if (data.code === 'email_address_not_authorized') throw new Error('Email code delivery is restricted to test addresses. The owner needs to connect a verified email sender before customer codes can be delivered.');
-      if (data.code === 'over_email_send_rate_limit') throw new Error(message || 'Please wait before requesting another email code.');
-      throw new Error(message || 'Could not send a sign-in code. Try again shortly.');
-    }
-    return { status: 'otp_sent' };
-  }
-
-  function normalizeIndianPhone(value) {
-    let digits = String(value || '').replace(/\D/g, '');
-    if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
-    if (!/^[6-9][0-9]{9}$/.test(digits)) throw new Error('Enter a valid 10-digit Indian WhatsApp number.');
-    return { mobile: digits, phone: '+91' + digits };
-  }
-
-  async function requestWhatsAppOtp(value, options = {}) {
-    requireConfig();
-    const { mobile, phone } = normalizeIndianPhone(value);
-    const createUser = options.createUser === true;
-    const name = String(options.name || '').trim();
-    const email = String(options.email || '').trim().toLowerCase();
-    if (createUser && name.length < 2) throw new Error('Enter your full name to create an account.');
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address, or leave it blank.');
-    const body = { phone, channel: 'whatsapp', create_user: createUser };
-    if (createUser) body.data = { full_name: name, mobile, contact_email: email };
-    const response = await fetch(url + '/auth/v1/otp', {
-      method: 'POST',
-      headers: { apikey: key, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      cache: 'no-store'
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = data.msg || data.message || data.error_description || data.error;
-      if (data.code === 'phone_provider_disabled') throw new Error('WhatsApp sign-in is not enabled in Supabase yet. Enable Phone sign-in and configure the Twilio WhatsApp sender first.');
-      if (data.code === 'sms_provider_not_configured') throw new Error('Supabase has no phone message provider configured yet. Add the Twilio WhatsApp sender and Content SID in Auth settings.');
-      if (data.code === 'over_sms_send_rate_limit' || response.status === 429) throw new Error(message || 'Please wait before requesting another WhatsApp code.');
-      throw new Error(message || 'Could not request a WhatsApp code. Check the Twilio WhatsApp setup and try again.');
-    }
-    return { status: 'otp_sent', mobile };
-  }
-
-  async function verifyWhatsAppOtp(value, token) {
-    requireConfig();
-    const { mobile, phone } = normalizeIndianPhone(value);
-    const code = String(token || '').replace(/\D/g, '');
-    if (!/^\d{6}$/.test(code)) throw new Error('Enter the complete 6-digit WhatsApp code.');
-    const response = await fetch(url + '/auth/v1/verify', {
-      method: 'POST',
-      headers: { apikey: key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, token: code, type: 'sms' }),
-      cache: 'no-store'
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.access_token) {
-      const message = data.msg || data.message || data.error_description || data.error;
-      throw new Error(message || 'That WhatsApp code could not be verified. Request a new code and try again.');
-    }
-    setSession(data);
-    await ensureProfile();
-    return { status: 'signed_in', account };
-  }
-
-  async function resendSignupOtp(email) {
-    requireConfig();
-    const address = String(email || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address used for registration.');
-    const response = await fetch(url + '/auth/v1/resend', {
-      method: 'POST',
-      headers: { apikey: key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'signup', email: address }),
-      cache: 'no-store'
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = data.msg || data.message || data.error_description || data.error;
-      if (data.code === 'over_email_send_rate_limit') throw new Error(message || 'Please wait before requesting another email code.');
-      throw new Error(message || 'Could not resend the signup code. Try again shortly.');
-    }
-    return { status: 'otp_sent' };
-  }
-
-  async function requestPasswordRecoveryOtp(email) {
+  async function requestPasswordRecovery(email) {
     requireConfig();
     const address = String(email || '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
-    const response = await fetch(url + '/auth/v1/recover', {
+    const redirectTo = window.location.origin + window.location.pathname + '?password-reset=1';
+    const response = await fetch(url + '/auth/v1/recover?redirect_to=' + encodeURIComponent(redirectTo), {
       method: 'POST',
       headers: { apikey: key, 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: address }),
@@ -242,39 +142,15 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const message = data.msg || data.message || data.error_description || data.error;
-      if (data.code === 'over_email_send_rate_limit') throw new Error(message || 'Please wait before requesting another reset code.');
-      throw new Error(message || 'Could not send a reset code. Try again shortly.');
+      if (data.code === 'over_email_send_rate_limit') throw new Error(message || 'Please wait before requesting another reset link.');
+      throw new Error(message || 'Could not send a reset link. Try again shortly.');
     }
-    return { status: 'otp_sent' };
+    return { status: 'reset_link_requested' };
   }
-
-  async function verifyEmailOtp(email, token, type = 'email') {
-    requireConfig();
-    const address = String(email || '').trim().toLowerCase();
-    const code = String(token || '').replace(/\D/g, '');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('Enter the email address on your customer account.');
-    if (!/^\d{8}$/.test(code)) throw new Error('Enter the complete 8-digit email code.');
-    if (!['email', 'signup', 'recovery'].includes(type)) throw new Error('Choose a valid email verification purpose.');
-    const response = await fetch(url + '/auth/v1/verify', {
-      method: 'POST',
-      headers: { apikey: key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: address, token: code, type }),
-      cache: 'no-store'
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.access_token) {
-      const message = data.msg || data.message || data.error_description || data.error;
-      throw new Error(message || 'That code could not be verified. Request a new code and try again.');
-    }
-    setSession(data);
-    await ensureProfile();
-    return { status: 'signed_in', account };
-  }
-
   async function updatePassword(password) {
     requireConfig();
     const nextPassword = String(password || '');
-    if (!session || !session.access_token) throw new Error('Verify the password reset code before choosing a new password.');
+    if (!session || !session.access_token) throw new Error('Open the password reset link from your email before choosing a new password.');
     if (nextPassword.length < 12 || !/[A-Z]/.test(nextPassword) || !/[a-z]/.test(nextPassword) || !/[0-9]/.test(nextPassword)) {
       throw new Error('Use at least 12 characters with uppercase, lowercase and a number.');
     }
@@ -287,7 +163,7 @@
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const message = data.msg || data.message || data.error_description || data.error;
-      throw new Error(message || 'Could not update the password. Request a new reset code and try again.');
+      throw new Error(message || 'Could not update the password. Request a new reset link and try again.');
     }
     return { status: 'password_updated' };
   }
@@ -295,15 +171,16 @@
   async function initialize() {
     requireConfig();
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const passwordRecovery = params.get('type') === 'recovery' || new URLSearchParams(window.location.search).get('password-reset') === '1';
     const accessToken = params.get('access_token');
     const refreshToken = params.get('refresh_token');
-    if (!accessToken || !refreshToken) return;
+    if (!accessToken || !refreshToken) return { passwordRecovery: false };
     const response = await fetch(url + '/auth/v1/user', {
       headers: { apikey: key, Authorization: 'Bearer ' + accessToken },
       cache: 'no-store'
     });
     const user = await response.json().catch(() => null);
-    if (!response.ok || !user || !user.id) return;
+    if (!response.ok || !user || !user.id) return { passwordRecovery: false };
     setSession({
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -311,7 +188,8 @@
       user
     });
     history.replaceState(null, '', window.location.pathname + window.location.search);
-    await ensureProfile();
+    if (!passwordRecovery) await ensureProfile();
+    return { passwordRecovery };
   }
 
   async function createApplication(input) {
@@ -781,12 +659,7 @@
 
   window.DeepCSCBackend = Object.freeze({
     auth,
-    requestEmailOtp,
-    requestWhatsAppOtp,
-    verifyWhatsAppOtp,
-    resendSignupOtp,
-    requestPasswordRecoveryOtp,
-    verifyEmailOtp,
+    requestPasswordRecovery,
     updatePassword,
     initialize,
     getAccount: () => account,
