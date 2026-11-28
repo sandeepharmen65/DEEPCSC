@@ -299,21 +299,6 @@
     return { id: application.id.slice(0, 8).toUpperCase(), requestId: application.id, stored, storageError };
   }
 
-  async function notifyOwnerOfWebsiteRequest(requestId) {
-    if (!account) throw new Error('Sign in first to send the owner alert.');
-    if (!/^[0-9a-f-]{36}$/i.test(String(requestId || ''))) throw new Error('Request reference is not valid.');
-    const response = await fetch(url + '/functions/v1/notify-new-website-activity', {
-      method: 'POST',
-      headers: { apikey: key, Authorization: 'Bearer ' + await getToken(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requestId }),
-      cache: 'no-store'
-    });
-    const result = await response.json().catch(() => ({}));
-    if (response.status === 503 && result.reason === 'not_configured') return { sent: false, reason: 'not_configured' };
-    if (!response.ok) throw new Error(result.error || 'The website request was saved, but the generic owner alert could not be sent.');
-    return result;
-  }
-
   async function notifyOwnerOfNewCustomer() {
     if (!account || isOwnerEmail(account.email)) return { sent: false, reason: 'not_customer' };
     const response = await fetch(url + '/functions/v1/notify-new-website-customer', {
@@ -734,7 +719,6 @@
     initialize,
     getAccount: () => account,
     createApplication,
-    notifyOwnerOfWebsiteRequest,
     notifyOwnerOfNewCustomer,
     listApplications,
     downloadCustomerDocument,
@@ -782,3 +766,4 @@
     signOut
   });
 })();
+
